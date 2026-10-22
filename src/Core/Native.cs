@@ -1,0 +1,298 @@
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+namespace Rogerin.Core
+{
+    /// <summary>Chamadas Win32 usadas pelo motor. Nenhum script ou shell e invocado.</summary>
+    static class Native
+    {
+        [DllImport("kernel32.dll")]
+        public static extern ulong GetTickCount64();
+
+        [DllImport("dwmapi.dll")]
+        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+        /// <summary>Barra de titulo escura (Windows 10 20H1+ e 11). Em versoes antigas a chamada so falha em silencio.</summary>
+        public static void UseDarkTitleBar(IntPtr hwnd)
+        {
+            int on = 1;
+            if (DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int)) != 0) // DWMWA_USE_IMMERSIVE_DARK_MODE
+                DwmSetWindowAttribute(hwnd, 19, ref on, sizeof(int));     // valor antigo, Windows 10 1809-1909
+        }
+
+        /// <summary>Esvazia o cache do cliente DNS (equivale a ipconfig /flushdns, sem mexer no IP).</summary>
+        [DllImport("dnsapi.dll", EntryPoint = "DnsFlushResolverCache")]
+        public static extern bool FlushDnsCache();
+
+        #region Sessao do usuario interativo
+
+        [DllImport("kernel32.dll")]
+        public static extern uint WTSGetActiveConsoleSessionId();
+
+        [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool WTSQuerySessionInformation(IntPtr server, uint sessionId, int infoClass, out IntPtr buffer, out uint bytes);
+
+        [DllImport("wtsapi32.dll")]
+        static extern void WTSFreeMemory(IntPtr memory);
+
+        const int WTSUserName = 5, WTSDomainName = 7;
+
+        public static string QuerySessionString(uint sessionId, bool domain)
+        {
+            if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, domain ? WTSDomainName : WTSUserName, out var buf, out _))
+                return null;
+            try { return Marshal.PtrToStringUni(buf); }
+            finally { WTSFreeMemory(buf); }
+        }
+
+        #endregion
+
+        #region Servicos
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr OpenSCManager(string machine, string database, uint access);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr OpenService(IntPtr scm, string name, uint access);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool ChangeServiceConfig(IntPtr service, uint type, uint start, uint error, string binary,
+            string group, IntPtr tag, string deps, string account, string password, string display);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool ChangeServiceConfig2(IntPtr service, uint infoLevel, ref uint delayedAutoStart);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool CloseServiceHandle(IntPtr handle);
+
+        const uint SC_MANAGER_CONNECT = 0x0001, SERVICE_CHANGE_CONFIG = 0x0002, SERVICE_NO_CHANGE = 0xFFFFFFFF;
+        const uint SERVICE_CONFIG_DELAYED_AUTO_START_INFO = 3;
+
+        /// <param name="start">2 = automatico, 3 = manual, 4 = desativado</param>
+        public static void SetServiceStart(string name, uint start, bool delayed)
+        {
+            var scm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+            if (scm == IntPtr.Zero) throw new Win32Exception();
+            try
+            {
+                var svc = OpenService(scm, name, SERVICE_CHANGE_CONFIG);
+                if (svc == IntPtr.Zero) throw new Win32Exception();
+                try
+                {
+                    if (!ChangeServiceConfig(svc, SERVICE_NO_CHANGE, start, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null))
+                        throw new Win32Exception();
+                    if (start == 2)
+                    {
+                        uint flag = delayed ? 1u : 0u;
+                        ChangeServiceConfig2(svc, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, ref flag);
+                    }
+                }
+                finally { CloseServiceHandle(svc); }
+            }
+            finally { CloseServiceHandle(scm); }
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr CreateService(IntPtr scm, string name, string display, uint access, uint type, uint start,
+            uint error, string binary, string group, IntPtr tag, string deps, string account, string password);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool DeleteService(IntPtr service);
+
+        const uint SC_MANAGER_CREATE_SERVICE = 0x0002, DELETE = 0x10000, SERVICE_ALL_ACCESS = 0xF01FF;
+        const int ERROR_SERVICE_DOES_NOT_EXIST = 1060, ERROR_SERVICE_MARKED_FOR_DELETE = 1072;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct SERVICE_FAILURE_ACTIONS
+        {
+            public uint ResetPeriod;   // segundos sem falha para zerar a contagem
+            public string RebootMsg;
+            public string Command;
+            public uint ActionCount;
+            public IntPtr Actions;     // SC_ACTION[]
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct SC_ACTION { public uint Type; public uint Delay; }
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "ChangeServiceConfig2W")]
+        static extern bool ChangeServiceConfig2(IntPtr service, uint infoLevel, ref SERVICE_FAILURE_ACTIONS info);
+
+        const uint SERVICE_CONFIG_FAILURE_ACTIONS = 2, SERVICE_CONFIG_FAILURE_ACTIONS_FLAG = 4, SC_ACTION_RESTART = 1;
+
+        /// <summary>
+        /// Cria um servico automatico (LocalSystem). <paramref name="deps"/>: nomes separados por \0, terminando em \0\0.
+        /// Com <paramref name="restartDelay"/>, o Windows reinicia o servico sozinho se ele travar ou parar com erro.
+        /// </summary>
+        public static void CreateAutoService(string name, string display, string binaryPath, string deps, TimeSpan? restartDelay = null)
+        {
+            var scm = OpenSCManager(null, null, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
+            if (scm == IntPtr.Zero) throw new Win32Exception();
+            try
+            {
+                var svc = CreateService(scm, name, display, SERVICE_ALL_ACCESS, 0x10 /* WIN32_OWN_PROCESS */, 2 /* AUTO_START */,
+                    1 /* ERROR_NORMAL */, binaryPath, null, IntPtr.Zero, deps, null, null);
+                if (svc == IntPtr.Zero) throw new Win32Exception();
+                try { if (restartDelay != null) SetRestartOnFailure(svc, restartDelay.Value); }
+                finally { CloseServiceHandle(svc); }
+            }
+            finally { CloseServiceHandle(scm); }
+        }
+
+        /// <summary>Reinicia nas tres primeiras falhas; a contagem zera apos 1 dia sem falhas.</summary>
+        static void SetRestartOnFailure(IntPtr svc, TimeSpan delay)
+        {
+            var actions = new[]
+            {
+                new SC_ACTION { Type = SC_ACTION_RESTART, Delay = (uint)delay.TotalMilliseconds },
+                new SC_ACTION { Type = SC_ACTION_RESTART, Delay = (uint)delay.TotalMilliseconds },
+                new SC_ACTION { Type = SC_ACTION_RESTART, Delay = (uint)delay.TotalMilliseconds },
+            };
+            int size = Marshal.SizeOf(typeof(SC_ACTION));
+            var buf = Marshal.AllocHGlobal(size * actions.Length);
+            try
+            {
+                for (int i = 0; i < actions.Length; i++)
+                    Marshal.StructureToPtr(actions[i], buf + i * size, false);
+                var info = new SERVICE_FAILURE_ACTIONS { ResetPeriod = 86400, ActionCount = (uint)actions.Length, Actions = buf };
+                if (!ChangeServiceConfig2(svc, SERVICE_CONFIG_FAILURE_ACTIONS, ref info)) throw new Win32Exception();
+                // Tambem quando o processo encerra "normalmente" mas com codigo de erro, nao so quando trava.
+                uint onNonCrash = 1;
+                ChangeServiceConfig2(svc, SERVICE_CONFIG_FAILURE_ACTIONS_FLAG, ref onNonCrash);
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+
+        /// <summary>Remove o servico. Retorna false se ele nao existia.</summary>
+        public static bool RemoveService(string name)
+        {
+            var scm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+            if (scm == IntPtr.Zero) throw new Win32Exception();
+            try
+            {
+                var svc = OpenService(scm, name, DELETE);
+                if (svc == IntPtr.Zero)
+                {
+                    var err = Marshal.GetLastWin32Error();
+                    if (err == ERROR_SERVICE_DOES_NOT_EXIST) return false;
+                    throw new Win32Exception(err);
+                }
+                try
+                {
+                    if (!DeleteService(svc) && Marshal.GetLastWin32Error() != ERROR_SERVICE_MARKED_FOR_DELETE)
+                        throw new Win32Exception();
+                    return true;
+                }
+                finally { CloseServiceHandle(svc); }
+            }
+            finally { CloseServiceHandle(scm); }
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool MoveFileEx(string existing, string newName, uint flags);
+
+        /// <summary>Agenda a exclusao do arquivo para o proximo reinicio (arquivo em uso).</summary>
+        public static void DeleteOnReboot(string path)
+        {
+            if (!MoveFileEx(path, null, 0x4 /* MOVEFILE_DELAY_UNTIL_REBOOT */)) throw new Win32Exception();
+        }
+
+        #endregion
+
+        #region Windows Installer
+
+        [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+        static extern uint MsiOpenPackageEx(string path, uint options, out IntPtr product);
+
+        [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+        static extern uint MsiGetProductProperty(IntPtr product, string property, System.Text.StringBuilder value, ref uint length);
+
+        [DllImport("msi.dll")]
+        static extern uint MsiCloseHandle(IntPtr handle);
+
+        [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+        static extern int MsiQueryProductState(string productCode);
+
+        /// <summary>Le propriedades de um .msi sem instalar: abrir o pacote nao roda nenhuma acao dele.</summary>
+        public static string[] MsiProperties(string msiPath, params string[] names)
+        {
+            var rc = MsiOpenPackageEx(msiPath, 1 /* MSIOPENPACKAGEFLAGS_IGNOREMACHINESTATE */, out var h);
+            if (rc != 0) throw new Win32Exception((int)rc);
+            try
+            {
+                var values = new string[names.Length];
+                for (int i = 0; i < names.Length; i++)
+                {
+                    var sb = new System.Text.StringBuilder(512);
+                    uint len = (uint)sb.Capacity;
+                    rc = MsiGetProductProperty(h, names[i], sb, ref len);
+                    if (rc != 0) throw new Win32Exception((int)rc, $"{names[i]} não lido do pacote");
+                    values[i] = sb.ToString();
+                }
+                return values;
+            }
+            finally { MsiCloseHandle(h); }
+        }
+
+        [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+        static extern uint MsiEnumProducts(uint index, System.Text.StringBuilder productCode);
+
+        [DllImport("msi.dll", CharSet = CharSet.Unicode)]
+        static extern uint MsiGetProductInfo(string productCode, string property, System.Text.StringBuilder value, ref uint length);
+
+        /// <summary>ProductCode de todos os produtos do Windows Installer instalados.</summary>
+        public static System.Collections.Generic.IEnumerable<string> MsiProducts()
+        {
+            for (uint i = 0; ; i++)
+            {
+                var sb = new System.Text.StringBuilder(39);
+                if (MsiEnumProducts(i, sb) != 0) yield break; // 259 = acabou a lista
+                yield return sb.ToString();
+            }
+        }
+
+        /// <summary>Propriedade de um produto instalado (ProductName, VersionString, InstallLocation...). Null se nao houver.</summary>
+        public static string MsiProductInfo(string productCode, string property)
+        {
+            var sb = new System.Text.StringBuilder(1024);
+            uint len = (uint)sb.Capacity;
+            return MsiGetProductInfo(productCode, property, sb, ref len) == 0 ? sb.ToString() : null;
+        }
+
+        /// <summary>True se o produto (ProductCode) esta instalado nesta maquina.</summary>
+        public static bool MsiInstalled(string productCode) => MsiQueryProductState(productCode) == 5; // INSTALLSTATE_DEFAULT
+
+        #endregion
+
+        #region Energia
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerGetActiveScheme(IntPtr root, out IntPtr guid);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerSetActiveScheme(IntPtr root, ref Guid guid);
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr LocalFree(IntPtr mem);
+
+        public static Guid GetActivePowerScheme()
+        {
+            var rc = PowerGetActiveScheme(IntPtr.Zero, out var ptr);
+            if (rc != 0) throw new Win32Exception((int)rc);
+            try { return (Guid)Marshal.PtrToStructure(ptr, typeof(Guid)); }
+            finally { LocalFree(ptr); }
+        }
+
+        public static void SetActivePowerScheme(Guid scheme)
+        {
+            var rc = PowerSetActiveScheme(IntPtr.Zero, ref scheme);
+            if (rc != 0)
+                throw new Win32Exception((int)rc, rc == 2
+                    ? "Plano de energia não existe neste computador (comum em notebooks com Modern Standby)."
+                    : new Win32Exception((int)rc).Message);
+        }
+
+        #endregion
+    }
+}

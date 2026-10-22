@@ -1,0 +1,454 @@
+{
+  "schemaVersion": 1,
+  "tweaks": [
+    {
+      "id": "privacy.advertising-id",
+      "name": "Desativar ID de publicidade",
+      "description": "Impede que apps usem um identificador único para anúncios personalizados.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo", "name": "Enabled", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "privacy.telemetry-policy",
+      "name": "Reduzir telemetria ao mínimo",
+      "description": "Política AllowTelemetry=0. No Pro o Windows aplica o nível mínimo permitido; no Enterprise/Education desliga por completo.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "AllowTelemetry", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "privacy.diagtrack-service",
+      "name": "Desativar serviço de telemetria (DiagTrack)",
+      "description": "Serviço 'Experiências do Usuário Conectado e Telemetria'. Não afeta o Windows Update.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "service", "name": "DiagTrack", "startType": "Disabled" }
+      ]
+    },
+    {
+      "id": "privacy.telemetry-tasks",
+      "name": "Desativar tarefas agendadas de telemetria",
+      "description": "Compatibility Appraiser e coletor do Programa de Aperfeiçoamento da Experiência do Usuário (CEIP).",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "task", "path": "\\Microsoft\\Windows\\Application Experience", "name": "Microsoft Compatibility Appraiser", "state": "Disabled" },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Customer Experience Improvement Program", "name": "Consolidator", "state": "Disabled" }
+      ]
+    },
+    {
+      "id": "privacy.activity-history",
+      "name": "Desativar histórico de atividades",
+      "description": "Impede que o Windows registre e publique o histórico de atividades do usuário.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "EnableActivityFeed", "valueType": "DWord", "value": 0 },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "PublishUserActivities", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "privacy.tailored-experiences",
+      "name": "Desativar experiências personalizadas",
+      "description": "Impede dicas e anúncios baseados nos dados de diagnóstico.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy", "name": "TailoredExperiencesWithDiagnosticDataEnabled", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "privacy.feedback-prompts",
+      "name": "Desativar pedidos de feedback",
+      "description": "O Windows para de perguntar ao usuário o que ele achou do sistema.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Siuf\\Rules", "name": "NumberOfSIUFInPeriod", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "privacy.start-suggestions",
+      "name": "Remover sugestões e apps patrocinados",
+      "description": "Desliga sugestões no Iniciar, dicas e a instalação silenciosa de apps promovidos.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SilentInstalledAppsEnabled", "valueType": "DWord", "value": 0 },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SystemPaneSuggestionsEnabled", "valueType": "DWord", "value": 0 },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338388Enabled", "valueType": "DWord", "value": 0 },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338389Enabled", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "privacy.bing-search",
+      "name": "Remover resultados do Bing na busca do Iniciar",
+      "description": "A busca do menu Iniciar passa a mostrar apenas resultados locais.",
+      "category": "Privacidade",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\Explorer", "name": "DisableSearchBoxSuggestions", "valueType": "DWord", "value": 1 },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "BingSearchEnabled", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "ai.recall",
+      "name": "Desativar Recall",
+      "description": "Política que desliga a captura contínua de tela do Recall em PCs Copilot+.",
+      "category": "IA",
+      "risk": "safe",
+      "os": ["11"],
+      "minBuild": 26100,
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "valueType": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "ai.copilot-policy",
+      "name": "Desativar Windows Copilot (política)",
+      "description": "Política TurnOffWindowsCopilot. Em builds recentes o Copilot é um app comum; remova-o também no Debloat.",
+      "category": "IA",
+      "risk": "safe",
+      "os": ["11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot", "name": "TurnOffWindowsCopilot", "valueType": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "perf.visual-effects",
+      "name": "Efeitos visuais: melhor desempenho",
+      "description": "Equivale a 'Ajustar para obter um melhor desempenho'. O visual fica mais simples. Vale após sair e entrar de novo.",
+      "category": "Desempenho",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects", "name": "VisualFXSetting", "valueType": "DWord", "value": 2 }
+      ]
+    },
+    {
+      "id": "perf.menu-delay",
+      "name": "Menus instantâneos",
+      "description": "Reduz o atraso de abertura de submenus de 400 ms para 0 ms.",
+      "category": "Desempenho",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Control Panel\\Desktop", "name": "MenuShowDelay", "valueType": "String", "value": "0" }
+      ]
+    },
+    {
+      "id": "perf.startup-delay",
+      "name": "Remover atraso dos apps de inicialização",
+      "description": "O Explorer deixa de esperar alguns segundos antes de abrir os apps de inicialização.",
+      "category": "Desempenho",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize", "name": "StartupDelayInMSec", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "perf.background-apps",
+      "name": "Bloquear apps da Store em segundo plano",
+      "description": "Política LetAppsRunInBackground=2. Apps de mensagem da Store podem atrasar notificações.",
+      "category": "Desempenho",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy", "name": "LetAppsRunInBackground", "valueType": "DWord", "value": 2 }
+      ]
+    },
+    {
+      "id": "perf.high-performance-power",
+      "name": "Plano de energia: Alto desempenho",
+      "description": "Ativa o plano Alto desempenho. Em notebooks reduz a duração da bateria. Indisponível em alguns notebooks com Modern Standby.",
+      "category": "Desempenho",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "powerScheme", "guid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" }
+      ]
+    },
+    {
+      "id": "perf.hibernation-off",
+      "name": "Desativar hibernação",
+      "description": "Apaga o hiberfil.sys (libera GBs no disco do sistema) e desliga a Inicialização Rápida. Não recomendado em notebooks.",
+      "category": "Desempenho",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "actions": [
+        {
+          "type": "command",
+          "file": "powercfg.exe",
+          "applyArgs": "/hibernate off",
+          "revertArgs": "/hibernate on",
+          "detect": { "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power", "name": "HibernateEnabled", "value": 0 }
+        }
+      ]
+    },
+    {
+      "id": "perf.sysmain",
+      "name": "Desativar SysMain (Superfetch)",
+      "description": "Pré-carrega apps na memória lendo o disco em segundo plano. Em HDD com uso em 100% costuma ser um dos culpados; em compensação, os programas podem demorar um pouco mais para abrir. Em SSD o ganho é pequeno.",
+      "category": "Disco",
+      "risk": "advanced",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "service", "name": "SysMain", "startType": "Disabled" }
+      ]
+    },
+    {
+      "id": "disk.windows-search",
+      "name": "Desativar indexação do Windows Search (HDD)",
+      "description": "O indexador (serviço WSearch) é a causa mais comum de disco em 100% em HDD. A busca de arquivos no Iniciar e no Explorer continua funcionando, só que mais lenta, e a pesquisa do Outlook fica mais lenta e menos completa.",
+      "category": "Disco",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "media": "hdd",
+      "actions": [
+        { "type": "service", "name": "WSearch", "startType": "Disabled" }
+      ]
+    },
+    {
+      "id": "disk.ntfs-last-access",
+      "name": "Não gravar data de último acesso (HDD)",
+      "description": "NtfsDisableLastAccessUpdate: o NTFS deixa de fazer uma gravação extra a cada arquivo lido. Nenhum app comum depende disso. Reiniciar depois.",
+      "category": "Disco",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "media": "hdd",
+      "rebootRequired": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", "name": "NtfsDisableLastAccessUpdate", "valueType": "DWord", "value": 2147483649 }
+      ]
+    },
+    {
+      "id": "disk.ntfs-8dot3",
+      "name": "Não criar nomes curtos 8.3 (HDD)",
+      "description": "O NTFS deixa de gerar o nome curto (ex.: PROGRA~1) para cada arquivo novo, o que pesa em pastas com muitos arquivos. Instaladores e sistemas muito antigos podem depender desses nomes. Teste antes em uma máquina.",
+      "category": "Disco",
+      "risk": "advanced",
+      "os": ["10", "11"],
+      "media": "hdd",
+      "rebootRequired": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", "name": "NtfsDisable8dot3NameCreation", "valueType": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "disk.scheduled-optimize",
+      "name": "Manter otimização automática de unidades",
+      "description": "Garante que a tarefa semanal do Windows está ligada: desfragmenta HDD e faz TRIM em SSD, só com o PC ocioso. Muitos otimizadores desligam essa tarefa.",
+      "category": "Disco",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "task", "path": "\\Microsoft\\Windows\\Defrag", "name": "ScheduledDefrag", "state": "Enabled" }
+      ]
+    },
+    {
+      "id": "gaming.game-dvr",
+      "name": "Desativar gravação em segundo plano (Game DVR)",
+      "description": "Desliga a captura contínua da Xbox Game Bar, que consome GPU.",
+      "category": "Jogos e mídia",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\System\\GameConfigStore", "name": "GameDVR_Enabled", "valueType": "DWord", "value": 0 },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR", "name": "AllowGameDVR", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "gaming.hags",
+      "name": "Agendamento de GPU acelerado por hardware",
+      "description": "HwSchMode=2. Requer GPU e driver compatíveis (WDDM 2.7+). Reiniciar depois.",
+      "category": "Jogos e mídia",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "minBuild": 19041,
+      "rebootRequired": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", "name": "HwSchMode", "valueType": "DWord", "value": 2 }
+      ]
+    },
+    {
+      "id": "gaming.mouse-acceleration",
+      "name": "Desativar aceleração do mouse",
+      "description": "Desmarca 'Aprimorar precisão do ponteiro'. Movimento 1:1.",
+      "category": "Jogos e mídia",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Control Panel\\Mouse", "name": "MouseSpeed", "valueType": "String", "value": "0" },
+        { "type": "registry", "path": "HKCU\\Control Panel\\Mouse", "name": "MouseThreshold1", "valueType": "String", "value": "0" },
+        { "type": "registry", "path": "HKCU\\Control Panel\\Mouse", "name": "MouseThreshold2", "valueType": "String", "value": "0" }
+      ]
+    },
+    {
+      "id": "gaming.system-responsiveness",
+      "name": "Priorizar multimídia no agendador",
+      "description": "SystemResponsiveness=10 (padrão 20). O ganho real é pequeno e varia; meça antes e depois.",
+      "category": "Jogos e mídia",
+      "risk": "advanced",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "SystemResponsiveness", "valueType": "DWord", "value": 10 }
+      ]
+    },
+    {
+      "id": "net.delivery-optimization-lan",
+      "name": "Otimização de Entrega só na rede local",
+      "description": "Política DODownloadMode=1: atualizações podem vir de outros PCs da mesma LAN, mas o PC não envia dados para a internet. Não altera IP, DNS nem adaptador.",
+      "category": "Rede",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization", "name": "DODownloadMode", "valueType": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "net.network-throttling",
+      "name": "Remover limitação de rede durante multimídia",
+      "description": "NetworkThrottlingIndex=0xFFFFFFFF. O Windows deixa de limitar pacotes de rede quando há áudio/vídeo tocando. Não altera IP, DNS nem adaptador.",
+      "category": "Rede",
+      "risk": "advanced",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "NetworkThrottlingIndex", "valueType": "DWord", "value": 4294967295 }
+      ]
+    },
+    {
+      "id": "net.dns-cache-ttl",
+      "name": "Limitar cache de DNS com falha",
+      "description": "MaxNegativeCacheTtl=0: uma consulta DNS que falhou não fica presa no cache, então o site volta assim que a rede volta. Não altera IP nem servidores DNS.",
+      "category": "Rede",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Dnscache\\Parameters", "name": "MaxNegativeCacheTtl", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "ui.file-extensions",
+      "name": "Mostrar extensões de arquivos",
+      "description": "Ajuda o usuário a identificar arquivos falsos como 'fatura.pdf.exe'.",
+      "category": "Interface",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideFileExt", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "ui.classic-context-menu",
+      "name": "Menu de contexto clássico",
+      "description": "Volta o menu completo do botão direito, sem 'Mostrar mais opções'. Vale após reiniciar o Explorer.",
+      "category": "Interface",
+      "risk": "safe",
+      "os": ["11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32", "name": "(Default)", "valueType": "String", "value": "", "removeKeyOnRevert": "HKCU\\Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" }
+      ]
+    },
+    {
+      "id": "ui.widgets-off",
+      "name": "Desativar Widgets",
+      "description": "Política que remove o painel de Widgets e notícias da barra de tarefas.",
+      "category": "Interface",
+      "risk": "safe",
+      "os": ["11"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Dsh", "name": "AllowNewsAndInterests", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "ui.news-interests-off",
+      "name": "Desativar Notícias e Interesses",
+      "description": "Remove o widget de clima e notícias da barra de tarefas do Windows 10.",
+      "category": "Interface",
+      "risk": "safe",
+      "os": ["10"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Feeds", "name": "EnableFeeds", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "ui.sticky-keys-prompt",
+      "name": "Desativar atalho de Teclas de Aderência",
+      "description": "Para o aviso que aparece ao apertar Shift 5 vezes.",
+      "category": "Interface",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Control Panel\\Accessibility\\StickyKeys", "name": "Flags", "valueType": "String", "value": "506" }
+      ]
+    },
+    {
+      "id": "security.uac-no-dim",
+      "name": "UAC: notificar sem escurecer a área de trabalho",
+      "description": "Nível 2 de 4 do Controle de Conta de Usuário: avisa só quando apps tentam alterar o computador e mostra o aviso sem a tela escura (área de trabalho segura). Permite responder ao UAC por acesso remoto, mas é um pouco menos protegido que o padrão. Se o UAC estiver desligado, ele é religado e o PC precisa reiniciar.",
+      "category": "Segurança",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "gpoManaged": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "EnableLUA", "valueType": "DWord", "value": 1 },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "ConsentPromptBehaviorAdmin", "valueType": "DWord", "value": 5 },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "name": "PromptOnSecureDesktop", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "debloat.consumer-apps",
+      "name": "Remover apps pré-instalados de consumo",
+      "description": "Notícias, Clima, Paciência, Hub de Comentários, Dicas, Mapas, Clipchamp, Microsoft 365 Hub, Power Automate e Obter Ajuda. Reinstaláveis pela Microsoft Store.",
+      "category": "Debloat",
+      "risk": "moderate",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "appx", "package": "Microsoft.BingNews" },
+        { "type": "appx", "package": "Microsoft.BingWeather" },
+        { "type": "appx", "package": "Microsoft.MicrosoftSolitaireCollection" },
+        { "type": "appx", "package": "Microsoft.WindowsFeedbackHub" },
+        { "type": "appx", "package": "Microsoft.Getstarted" },
+        { "type": "appx", "package": "Microsoft.WindowsMaps" },
+        { "type": "appx", "package": "Clipchamp.Clipchamp" },
+        { "type": "appx", "package": "Microsoft.MicrosoftOfficeHub" },
+        { "type": "appx", "package": "Microsoft.PowerAutomateDesktop" },
+        { "type": "appx", "package": "Microsoft.GetHelp" }
+      ]
+    },
+    {
+      "id": "debloat.copilot-app",
+      "name": "Remover app Copilot",
+      "description": "Remove o app Microsoft Copilot. Reinstalável pela Microsoft Store.",
+      "category": "Debloat",
+      "risk": "moderate",
+      "os": ["11"],
+      "actions": [
+        { "type": "appx", "package": "Microsoft.Copilot" }
+      ]
+    }
+  ]
+}
