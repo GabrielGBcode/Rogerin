@@ -27,7 +27,21 @@ Detecta automaticamente, para o usuário logado e em todos os perfis: Chrome, Ed
 - **Duas travas no código** (`src/Core/Browsers.cs`):
   1. só pastas cujo nome está em `CacheFolders` (Cache, Code Cache, GPUCache, cache2…) são percorridas;
   2. arquivos de `ProtectedFiles` (Login Data, Bookmarks, Cookies, History, places.sqlite, logins.json, key4.db…) nunca são apagados, mesmo se aparecerem dentro de uma pasta de cache.
-- Com o navegador aberto, arquivos em uso são pulados. A tela avisa para fechar o navegador antes.
+- **O navegador é fechado antes da limpeza** (a confirmação avisa): o Rogerin pede para as janelas fecharem, como clicar no X, e após 8 segundos encerra o que sobrou (processos em segundo plano, Inicialização turbo do Edge). Só os processos da sessão do usuário logado no console são fechados. Chrome e Chromium usam o mesmo processo (`chrome.exe`), assim como Opera e Opera GX: limpar um fecha o outro.
+- Quando a limpeza começa, aparece uma janela de progresso com a barra, o **percentual**, o item atual e "Item X de Y".
+
+## Limpeza de temporários
+
+- `%TEMP%` de **todos os perfis de usuário** da máquina (inclusive o do técnico que elevou com outra conta), `C:\Windows\Temp` e os temporários dos serviços (LocalService, NetworkService, SYSTEM).
+- Apaga arquivos **criados e alterados há mais de 2 horas** (`Cleanup.MinAge`), para não atrapalhar instalações em andamento; conta a data de criação porque arquivo extraído de zip guarda a data antiga de alteração. Arquivos em uso são pulados e os somente leitura também são apagados.
+- **Prefetch do Windows** (`C:\Windows\Prefetch`): só os arquivos `*.pf` com mais de 2 horas; `Layout.ini` e a pasta `ReadyBoot` ficam. O Windows recria os `.pf` e os programas podem abrir um pouco mais devagar na primeira vez.
+- As **subpastas que ficam vazias** também são apagadas (antes só os arquivos saíam e as pastas dos instaladores ficavam).
+
+## Energia
+
+- **Plano de energia** (`perf.power-plan`, nível Básico): ativa o **Desempenho máximo**. O Windows traz esse plano oculto, então o Rogerin o duplica (como `powercfg -duplicatescheme`) com um GUID fixo para reconhecer a cópia depois. Se não for possível (comum em notebooks com Modern Standby), ativa o **Alto desempenho**, criando a cópia dele se também estiver oculto. No plano ativado, **Desligar vídeo** e **Suspender atividades do computador** ficam em **Nunca**, na tomada e na bateria. Depois de ativar, o Rogerin confere se o Windows manteve o plano. Se nenhum dos dois ficar ativo, deixa Nunca no plano atual (geralmente o Equilibrado) e registra **PARCIAL** no log, explicando o motivo. O desfazer volta o plano anterior e os tempos de espera originais.
+- **Modern Standby** (`perf.modern-standby-off`, nível Básico, só aparece em PC com Modern Standby): nesses PCs o Painel de Controle mostra só o Equilibrado e o Windows não deixa outro plano ativo. O ajuste grava `HKLM\SYSTEM\CurrentControlSet\Control\Power\PlatformAoAcOverride = 0`, que desliga o Modern Standby e libera os planos. **Pede reinício.** Enquanto o PC não reinicia, o Windows não deixa outro plano ficar ativo. Por isso, quando os dois itens são aplicados juntos, o Rogerin cria o Desempenho máximo (com Nunca) e agenda a tarefa **"Rogerin - Selecionar plano de energia"** no Agendador de Tarefas. A tarefa roda como SYSTEM 30 segundos depois de ligar o PC e de novo 20 segundos depois de cada logon, e executa `powercfg -setactive <plano>` e `powercfg -change` (vídeo e suspensão em 0). Ao abrir, o Rogerin confere a tarefa pendente: ativa o plano se ainda estiver no Equilibrado, registra o resultado no log e apaga a tarefa quando o plano fica ativo. Se uma GPO do domínio impõe o plano ("Selecionar um plano de energia ativo"), o log diz isso, porque nesse caso o Windows volta ao plano da política a cada reinício. A tarefa vale por 7 dias e depois o Windows a apaga. O Rogerin também a apaga no desfazer. Se a placa não tiver suspensão S3, o PC deixa de suspender, o que não muda nada aqui porque o plano já fica em Nunca.
+- **Hibernação** (`perf.hibernation-off`, nível Básico): `powercfg -h off`.
 
 ## Máquinas com HDD (disco em 100%)
 
@@ -53,7 +67,7 @@ dist/               Rogerin.exe pronto para distribuir (gerado no build Release)
 src/                código do aplicativo WPF (tema escuro único)
   Core/             motor: Catalog, Engine, ActionRunner, Cleanup, SystemInfo, UserContext, Native, Log
 tools/Rogerin.Preview  ferramenta de dev: auditoria somente leitura + capturas de tela (não aplica nada)
-docs/screens/       capturas geradas pela ferramenta de preview
+docs/screens/       capturas geradas e audit.json da máquina de desenvolvimento
 docs/brand/         ícone original (rogerin-original.ico); o app usa src/Assets/Rogerin.ico, versão otimizada
 ```
 
@@ -89,3 +103,7 @@ Saída: `dist/Rogerin.exe` (cópia automática de `src/bin/Release/net48/Rogerin
 ## Adicionar um ajuste
 
 Inclua um objeto em `catalog/tweaks.json` com `type` igual a `registry`, `service`, `task`, `appx`, `powerScheme` ou `command` (este último só com executáveis da lista permitida) e recompile.
+
+## Licença
+
+© 2026 Gabriel Gomes Batista. Todos os direitos reservados. Veja o arquivo [LICENSE](LICENSE).

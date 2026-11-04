@@ -120,13 +120,17 @@ namespace Rogerin.Core
                     try { before = _runner.Read(a); }
                     catch (Exception ex) { _log.Write($"[{t.Id}] leitura falhou: {ex.Message}"); continue; }
                     if (before.Status != ActionStatus.NotApplied) continue;
+                    string partial = null;
                     try { _runner.Apply(a); }
+                    catch (PartialApplyException ex) { partial = ex.Message; }
                     catch (Exception ex) { _log.Write($"[{t.Id}] ERRO {a.Describe()}: {ex.Message}"); continue; }
                     backup.Entries.Add(new BackupEntry { TweakId = t.Id, TweakName = t.Name, Action = a, Before = before.Snapshot });
                     // Salvo a cada item: se o programa fechar no meio, o que ja mudou ainda pode ser desfeito.
                     // Se nao der para salvar, a excecao para a aplicacao: sem backup nao ha como desfazer.
                     SaveBackup(backup, file);
-                    _log.Write($"[{t.Id}] OK {a.Describe()} (antes: {before.Current})");
+                    _log.Write(partial == null
+                        ? $"[{t.Id}] OK {a.Describe()} (antes: {before.Current})"
+                        : $"[{t.Id}] PARCIAL {a.Describe()} (antes: {before.Current}): {partial}");
                 }
                 results.Add(Audit(t));
             }

@@ -178,29 +178,42 @@
       ]
     },
     {
-      "id": "perf.high-performance-power",
-      "name": "Plano de energia: Alto desempenho",
-      "description": "Ativa o plano Alto desempenho. Em notebooks reduz a duração da bateria. Indisponível em alguns notebooks com Modern Standby.",
+      "id": "perf.modern-standby-off",
+      "name": "Liberar os planos de energia (desligar Modern Standby)",
+      "description": "Este PC usa Modern Standby, e nesse modo o Windows só deixa usar o plano Equilibrado. PlatformAoAcOverride=0 desliga o Modern Standby e libera o Desempenho máximo e o Alto desempenho. Reinicie e rode o Rogerin de novo para ativar o plano. Se a placa não tiver suspensão S3, o PC deixa de suspender (o plano já fica em Nunca).",
       "category": "Desempenho",
-      "risk": "moderate",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "modernStandby": true,
+      "rebootRequired": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power", "name": "PlatformAoAcOverride", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "perf.power-plan",
+      "name": "Plano de energia: Desempenho máximo, sem desligar vídeo nem suspender",
+      "description": "Ativa o plano Desempenho máximo (o Windows o traz oculto; o Rogerin cria a cópia). Se não for possível, ativa o Alto desempenho. No plano ativado, Desligar vídeo e Suspender atividades do computador ficam em Nunca, na tomada e na bateria. Em notebooks reduz a duração da bateria.",
+      "category": "Desempenho",
+      "risk": "safe",
       "os": ["10", "11"],
       "actions": [
-        { "type": "powerScheme", "guid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" }
+        { "type": "powerPlan", "guids": ["e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"], "neverSleep": true }
       ]
     },
     {
       "id": "perf.hibernation-off",
-      "name": "Desativar hibernação",
-      "description": "Apaga o hiberfil.sys (libera GBs no disco do sistema) e desliga a Inicialização Rápida. Não recomendado em notebooks.",
+      "name": "Desativar hibernação (powercfg -h off)",
+      "description": "Roda powercfg -h off: o computador não hiberna mais, o hiberfil.sys é apagado (libera GBs no disco do sistema) e a Inicialização Rápida é desligada. Em notebooks, com a bateria no fim o Windows desliga em vez de hibernar.",
       "category": "Desempenho",
-      "risk": "moderate",
+      "risk": "safe",
       "os": ["10", "11"],
       "actions": [
         {
           "type": "command",
           "file": "powercfg.exe",
-          "applyArgs": "/hibernate off",
-          "revertArgs": "/hibernate on",
+          "applyArgs": "-h off",
+          "revertArgs": "-h on",
           "detect": { "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power", "name": "HibernateEnabled", "value": 0 }
         }
       ]

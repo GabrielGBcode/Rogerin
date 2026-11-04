@@ -57,8 +57,9 @@ Também há os botões **Marcar tudo**, **Desmarcar tudo** e **Marcar categoria*
 | Remover atraso dos apps de inicialização | Básico |
 | Efeitos visuais: melhor desempenho | Recomendado |
 | Bloquear apps da Store em segundo plano | Recomendado |
-| Plano de energia: Alto desempenho | Recomendado |
-| Desativar hibernação (libera espaço) | Recomendado |
+| Liberar os planos de energia (desligar Modern Standby; pede reinício) *(só PCs com Modern Standby)* | Básico |
+| Plano de energia: Desempenho máximo (se não der, Alto desempenho), com Desligar vídeo e Suspender em "Nunca" | Básico |
+| Desativar hibernação (`powercfg -h off`, libera espaço) | Básico |
 
 ### Disco
 | Ajuste | Nível |
@@ -105,13 +106,14 @@ Também há os botões **Marcar tudo**, **Desmarcar tudo** e **Marcar categoria*
 | Remover app Copilot *(Win 11)* | Recomendado |
 
 ### Limpeza (entra em todos os níveis)
-- Temporários do usuário e do Windows (só arquivos com mais de 1 dia)
+- Temporários de todos os usuários da máquina, do Windows e dos serviços do Windows (arquivos criados e alterados há mais de 2 horas, e as pastas que ficam vazias; arquivos em uso ficam)
+- Prefetch do Windows (só os arquivos `*.pf`; o Windows os recria)
 - Cache de download do Windows Update
 - Cache da Otimização de Entrega
 - Relatórios de erro (WER)
 - Cache de miniaturas
 - Cache DNS (não mexe em IP nem conexão)
-- **Cache dos navegadores**: Chrome, Edge, Brave, Vivaldi, Chromium, Opera, Opera GX e Firefox, em todos os perfis. Senhas, favoritos, histórico, cookies e extensões são preservados.
+- **Cache dos navegadores**: Chrome, Edge, Brave, Vivaldi, Chromium, Opera, Opera GX e Firefox, em todos os perfis. Se o navegador estiver aberto, o Rogerin o fecha antes de limpar (avisa na confirmação). Senhas, favoritos, histórico, cookies e extensões são preservados.
 - **Limpeza de Disco do Windows (todas as opções)** *(nível Recomendado)*: abre a Limpeza de Disco do Windows como administrador, com todas as opções marcadas (Limpeza do Windows Update, Lixeira, arquivos temporários, logs etc.), e espera terminar. Por segurança, ficam de fora a pasta Downloads, as versões do Histórico de Arquivos, os arquivos usados para Restaurar o PC e a instalação anterior do Windows (Windows.old, para "Voltar para a versão anterior").
 - **Desfragmentar disco do sistema agora** *(só HDD, nível Recomendado)*: inicia a ferramenta do Windows em segundo plano. Pode levar horas.
 
@@ -120,7 +122,7 @@ Também há os botões **Marcar tudo**, **Desmarcar tudo** e **Marcar categoria*
 1. Mostra a **lista exata** do que vai mudar, com o valor atual de cada item.
 2. Depois da confirmação, cria um **ponto de restauração** (opcional).
 3. Salva o valor antigo de cada ajuste num **backup** para poder desfazer.
-4. Aplica os ajustes e as limpezas e registra tudo no **log**.
+4. Aplica os ajustes e as limpezas e registra tudo no **log**. Durante a limpeza, aparece uma janela com a **barra de progresso e o percentual**, o item atual e "Item X de Y".
 5. Analisa a máquina de novo e mostra o novo estado.
 
 ## 4. Tela Computador

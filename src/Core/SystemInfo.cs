@@ -36,6 +36,8 @@ namespace Rogerin.Core
         public string DiskHealth { get; private set; }
         public string DiskModel { get; private set; }
         public double UptimeHours { get; private set; }
+        /// <summary>Modern Standby ativo: o Windows so deixa usar o plano Equilibrado.</summary>
+        public bool ModernStandby { get; private set; }
 
         public bool IsHdd => DiskMedia == "HDD";
         public bool DiskUnhealthy => DiskHealth != null && DiskHealth != "Saudável";
@@ -84,6 +86,7 @@ namespace Rogerin.Core
             info.DiskTotalGB = Math.Round(drive.TotalSize / (double)(1L << 30), 1);
             info.ReadSystemDisk();
             info.UptimeHours = Math.Round(Native.GetTickCount64() / 3_600_000.0, 1);
+            try { info.ModernStandby = Native.ModernStandby(); } catch (Exception) { }
             return info;
         }
 

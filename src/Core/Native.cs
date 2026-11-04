@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
@@ -24,6 +25,51 @@ namespace Rogerin.Core
         /// <summary>Esvazia o cache do cliente DNS (equivale a ipconfig /flushdns, sem mexer no IP).</summary>
         [DllImport("dnsapi.dll", EntryPoint = "DnsFlushResolverCache")]
         public static extern bool FlushDnsCache();
+
+        #region Janelas de ferramentas do sistema
+
+        delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int processId);
+
+        [DllImport("user32.dll")]
+        static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        /// <summary>
+        /// Manda WM_NULL e WM_MOUSEMOVE para as janelas (e controles) dos processos informados, como se o mouse
+        /// passasse por cima. A janela de "Pacotes de driver" / "Limpeza do Windows Update" do cleanmgr /sagerun
+        /// termina o trabalho mas so fecha quando recebe alguma mensagem de entrada; sem isso fica parada.
+        /// </summary>
+        public static void NudgeWindows(ICollection<int> processIds)
+        {
+            const uint WM_NULL = 0x0000, WM_MOUSEMOVE = 0x0200;
+            EnumWindowsProc nudge = (hwnd, _) =>
+            {
+                PostMessage(hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
+                PostMessage(hwnd, WM_MOUSEMOVE, IntPtr.Zero, IntPtr.Zero);
+                return true;
+            };
+            EnumWindows((hwnd, _) =>
+            {
+                GetWindowThreadProcessId(hwnd, out var pid);
+                if (processIds.Contains(pid))
+                {
+                    nudge(hwnd, IntPtr.Zero);
+                    EnumChildWindows(hwnd, nudge, IntPtr.Zero);
+                }
+                return true;
+            }, IntPtr.Zero);
+            GC.KeepAlive(nudge);
+        }
+
+        #endregion
 
         #region Sessao do usuario interativo
 
@@ -279,7 +325,7 @@ namespace Rogerin.Core
         public static Guid GetActivePowerScheme()
         {
             var rc = PowerGetActiveScheme(IntPtr.Zero, out var ptr);
-            if (rc != 0) throw new Win32Exception((int)rc);
+            if (rc != 0) throw new Win32Exception((int)rc, "PowerGetActiveScheme: " + new Win32Exception((int)rc).Message);
             try { return (Guid)Marshal.PtrToStructure(ptr, typeof(Guid)); }
             finally { LocalFree(ptr); }
         }
@@ -291,6 +337,101 @@ namespace Rogerin.Core
                 throw new Win32Exception((int)rc, rc == 2
                     ? "Plano de energia não existe neste computador (comum em notebooks com Modern Standby)."
                     : new Win32Exception((int)rc).Message);
+        }
+
+        [DllImport("powrprof.dll")]
+        static extern uint CallNtPowerInformation(int level, IntPtr input, uint inputSize, byte[] output, uint outputSize);
+
+        /// <summary>
+        /// True se o PC usa Modern Standby (S0 de baixo consumo). Nesse modo o Windows so oferece o plano Equilibrado:
+        /// Alto desempenho e Desempenho maximo ficam ocultos e nao ficam ativos.
+        /// </summary>
+        public static bool ModernStandby()
+        {
+            const int SystemPowerCapabilities = 4;
+            var caps = new byte[76]; // SYSTEM_POWER_CAPABILITIES
+            if (CallNtPowerInformation(SystemPowerCapabilities, IntPtr.Zero, 0, caps, (uint)caps.Length) != 0) return false;
+            return caps[20] != 0; // AoAc
+        }
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerEnumerate(IntPtr root, IntPtr scheme, IntPtr subGroup, uint accessFlags, uint index, ref Guid buffer, ref uint size);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerDuplicateScheme(IntPtr root, ref Guid source, ref IntPtr destination);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerReadACValueIndex(IntPtr root, ref Guid scheme, ref Guid subGroup, ref Guid setting, out uint value);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerReadDCValueIndex(IntPtr root, ref Guid scheme, ref Guid subGroup, ref Guid setting, out uint value);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerWriteACValueIndex(IntPtr root, ref Guid scheme, ref Guid subGroup, ref Guid setting, uint value);
+
+        [DllImport("powrprof.dll")]
+        static extern uint PowerWriteDCValueIndex(IntPtr root, ref Guid scheme, ref Guid subGroup, ref Guid setting, uint value);
+
+        /// <summary>Planos de energia visiveis no Painel de Controle (o Desempenho maximo fica oculto ate ser duplicado).</summary>
+        public static List<Guid> PowerSchemes()
+        {
+            const uint ACCESS_SCHEME = 16;
+            var list = new List<Guid>();
+            for (uint i = 0; ; i++)
+            {
+                var g = Guid.Empty;
+                uint size = 16;
+                if (PowerEnumerate(IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, ACCESS_SCHEME, i, ref g, ref size) != 0) break;
+                list.Add(g);
+            }
+            return list;
+        }
+
+        /// <summary>Equivale a "powercfg -duplicatescheme origem destino": cria o plano com um GUID fixo.</summary>
+        public static void DuplicatePowerScheme(Guid source, Guid destination)
+        {
+            var buf = Marshal.AllocHGlobal(16);
+            try
+            {
+                Marshal.StructureToPtr(destination, buf, false);
+                var ptr = buf;
+                var rc = PowerDuplicateScheme(IntPtr.Zero, ref source, ref ptr);
+                if (rc != 0) throw new Win32Exception((int)rc, $"PowerDuplicateScheme ({source}): {new Win32Exception((int)rc).Message}");
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+
+        const uint ERROR_FILE_NOT_FOUND = 2;
+
+        static Win32Exception PowerError(uint rc, string call, Guid scheme, Guid setting) =>
+            new Win32Exception((int)rc, $"{call} (plano {scheme}, configuração {setting}): {new Win32Exception((int)rc).Message}");
+
+        /// <summary>
+        /// Valor (na tomada e na bateria) de uma configuracao do plano, em segundos para os tempos de espera.
+        /// Null quando o plano nao grava valor proprio (planos de fabricante ou de GPO): vale o padrao do Windows.
+        /// </summary>
+        public static (uint? ac, uint? dc) ReadPowerValue(Guid scheme, Guid subGroup, Guid setting)
+        {
+            uint? ac = null, dc = null;
+            var rc = PowerReadACValueIndex(IntPtr.Zero, ref scheme, ref subGroup, ref setting, out var a);
+            if (rc == 0) ac = a; else if (rc != ERROR_FILE_NOT_FOUND) throw PowerError(rc, "PowerReadACValueIndex", scheme, setting);
+            rc = PowerReadDCValueIndex(IntPtr.Zero, ref scheme, ref subGroup, ref setting, out var d);
+            if (rc == 0) dc = d; else if (rc != ERROR_FILE_NOT_FOUND) throw PowerError(rc, "PowerReadDCValueIndex", scheme, setting);
+            return (ac, dc);
+        }
+
+        /// <summary>
+        /// Grava o valor no plano (null = nao mexe). So vale no plano ativo depois de <see cref="SetActivePowerScheme"/>.
+        /// Configuracao que nao existe neste PC (ex.: "Suspender apos" em maquina sem S0 nem S3) e ignorada:
+        /// nao ha o que gravar, e o erro impedia de ativar o plano.
+        /// </summary>
+        public static void WritePowerValue(Guid scheme, Guid subGroup, Guid setting, uint? ac, uint? dc)
+        {
+            uint rc;
+            if (ac.HasValue && (rc = PowerWriteACValueIndex(IntPtr.Zero, ref scheme, ref subGroup, ref setting, ac.Value)) != 0 && rc != ERROR_FILE_NOT_FOUND)
+                throw PowerError(rc, "PowerWriteACValueIndex", scheme, setting);
+            if (dc.HasValue && (rc = PowerWriteDCValueIndex(IntPtr.Zero, ref scheme, ref subGroup, ref setting, dc.Value)) != 0 && rc != ERROR_FILE_NOT_FOUND)
+                throw PowerError(rc, "PowerWriteDCValueIndex", scheme, setting);
         }
 
         #endregion

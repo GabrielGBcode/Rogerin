@@ -37,6 +37,11 @@ namespace Rogerin.Core
         // powerScheme
         public string Guid { get; set; }
 
+        // powerPlan: o primeiro plano disponivel da lista, em ordem de preferencia
+        public List<string> Guids { get; set; }
+        /// <summary>Desligar video e suspender: Nunca (na tomada e na bateria).</summary>
+        public bool NeverSleep { get; set; }
+
         // command
         public string File { get; set; }
         public string ApplyArgs { get; set; }
@@ -52,6 +57,9 @@ namespace Rogerin.Core
                 case "task": return $@"Tarefa {Path}\{Name} → {State}";
                 case "appx": return $"Remover app {Package}";
                 case "powerScheme": return $"Plano de energia {Guid}";
+                case "powerPlan":
+                    return "Plano de energia " + string.Join(" ou ", (Guids ?? new List<string>()).Select(g => ActionRunner.PowerPlanName(g))) +
+                           (NeverSleep ? "; desligar vídeo e suspender: Nunca" : "");
                 case "command": return $"{File} {ApplyArgs}";
                 default: return Type;
             }
@@ -71,10 +79,13 @@ namespace Rogerin.Core
         public bool GpoManaged { get; set; }
         /// <summary>"hdd" ou "ssd": so vale para esse tipo de disco do sistema. Se o tipo for desconhecido, o ajuste aparece.</summary>
         public string Media { get; set; }
+        /// <summary>true: so vale em PC com Modern Standby.</summary>
+        public bool ModernStandby { get; set; }
         public List<TweakAction> Actions { get; set; } = new List<TweakAction>();
 
         public bool AppliesTo(SystemInfo sys) =>
             Os.Contains(sys.WindowsMajor) && sys.Build >= MinBuild &&
+            (!ModernStandby || sys.ModernStandby) &&
             (Media == null || sys.DiskMedia == null || Media.Equals(sys.DiskMedia, StringComparison.OrdinalIgnoreCase));
     }
 

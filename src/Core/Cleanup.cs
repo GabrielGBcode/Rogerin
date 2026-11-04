@@ -41,13 +41,15 @@ namespace Rogerin.Core
 
     /// <summary>
     /// Remove arquivos em pastas de cache conhecidas. Arquivos em uso sao ignorados.
-    /// Pastas do sistema: so arquivos com mais de 1 dia. Navegadores: todo o cache (o navegador recria).
+    /// Pastas do sistema: so arquivos criados e alterados ha mais de <see cref="MinAge"/>, e as subpastas que ficam vazias.
+    /// Navegadores: todo o cache (o navegador recria), com o navegador fechado antes.
     /// </summary>
     public class Cleanup
     {
         readonly UserContext _user;
         readonly SystemInfo _sys;
-        public TimeSpan MinAge { get; set; } = TimeSpan.FromDays(1);
+        /// <summary>Protege arquivos de instalacoes em andamento. Conta a data de criacao: arquivo extraido de zip guarda a data antiga de alteracao.</summary>
+        public TimeSpan MinAge { get; set; } = TimeSpan.FromHours(2);
 
         public Cleanup(UserContext user, SystemInfo sys = null) { _user = user; _sys = sys; }
 
@@ -59,13 +61,26 @@ namespace Rogerin.Core
             var list = new List<CleanupTarget>
             {
                 new CleanupTarget { Name = "Temporários do Windows", Path = System.IO.Path.Combine(win, "Temp") },
+                new CleanupTarget { Name = "Temporários dos serviços do Windows", Path = System.IO.Path.Combine(win, @"ServiceProfiles\LocalService\AppData\Local\Temp"),
+                    Paths = new List<string>
+                    {
+                        System.IO.Path.Combine(win, @"ServiceProfiles\LocalService\AppData\Local\Temp"),
+                        System.IO.Path.Combine(win, @"ServiceProfiles\NetworkService\AppData\Local\Temp"),
+                        System.IO.Path.Combine(Environment.SystemDirectory, @"config\systemprofile\AppData\Local\Temp"),
+                    } },
+                // So os rastros *.pf: Layout.ini e a pasta ReadyBoot ficam. O Windows recria os .pf conforme os programas abrem.
+                new CleanupTarget { Name = "Prefetch do Windows", Path = System.IO.Path.Combine(win, "Prefetch"), Pattern = "*.pf" },
                 new CleanupTarget { Name = "Cache de download do Windows Update", Path = System.IO.Path.Combine(win, @"SoftwareDistribution\Download") },
                 new CleanupTarget { Name = "Cache da Otimização de Entrega", Path = System.IO.Path.Combine(win, @"ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache") },
                 new CleanupTarget { Name = "Relatórios de erro (WER)", Path = System.IO.Path.Combine(pd, @"Microsoft\Windows\WER") },
             };
             if (profile != null)
             {
-                list.Insert(0, new CleanupTarget { Name = "Temporários do usuário", Path = System.IO.Path.Combine(profile, @"AppData\Local\Temp") });
+                // Todos os perfis da maquina: o %TEMP% do tecnico que elevou com outra conta tambem entra.
+                var temps = UserProfiles().Select(p => System.IO.Path.Combine(p, @"AppData\Local\Temp")).Where(Directory.Exists).ToList();
+                var own = System.IO.Path.Combine(profile, @"AppData\Local\Temp");
+                if (!temps.Contains(own, StringComparer.OrdinalIgnoreCase)) temps.Insert(0, own);
+                list.Insert(0, new CleanupTarget { Name = temps.Count > 1 ? "Temporários dos usuários" : "Temporários do usuário", Path = own, Paths = temps });
                 list.Add(new CleanupTarget { Name = "Cache de miniaturas", Path = System.IO.Path.Combine(profile, @"AppData\Local\Microsoft\Windows\Explorer"), Pattern = "thumbcache_*.db" });
             }
             list.Add(new CleanupTarget { Name = "Cache DNS", IsDnsCache = true });
@@ -116,7 +131,9 @@ namespace Rogerin.Core
                     catch (UnauthorizedAccessException) { }
                     catch (System.Security.SecurityException) { }
                 }
-                try { ActionRunner.WaitSystemTool("cleanmgr.exe", $"/sagerun:{SageRun}"); }
+                // O cleanmgr abre uma segunda janela (Pacotes de driver / Windows Update) que, em alguns PCs,
+                // termina mas so fecha quando o mouse passa por cima. O "toque" periodico faz isso por nos.
+                try { ActionRunner.WaitSystemTool("cleanmgr.exe", $"/sagerun:{SageRun}", NudgeDiskCleanup); }
                 finally
                 {
                     // Nao deixa rastro: remove as marcacoes criadas para esta execucao.
@@ -132,16 +149,39 @@ namespace Rogerin.Core
             return Math.Max(0, drive.AvailableFreeSpace - before);
         }
 
+        static void NudgeDiskCleanup()
+        {
+            var ids = new HashSet<int>();
+            foreach (var p in Process.GetProcessesByName("cleanmgr"))
+                using (p) ids.Add(p.Id);
+            if (ids.Count > 0) Native.NudgeWindows(ids);
+        }
+
+        /// <summary>Pastas de perfil de usuario (C:\Users\*) registradas no ProfileList.</summary>
+        static IEnumerable<string> UserProfiles()
+        {
+            const string list = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+            using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(list))
+            {
+                if (k == null) yield break;
+                foreach (var sid in k.GetSubKeyNames().Where(n => n.StartsWith("S-1-5-21-") || n.StartsWith("S-1-12-1-")))
+                    using (var p = k.OpenSubKey(sid))
+                        if (p?.GetValue("ProfileImagePath") is string path) yield return Environment.ExpandEnvironmentVariables(path);
+            }
+        }
+
         string UserProfilePath()
         {
             using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + _user.Sid))
                 return k?.GetValue("ProfileImagePath") as string;
         }
 
+        DateTime Limit(CleanupTarget t) => t.IgnoreAge ? DateTime.MaxValue : DateTime.Now - MinAge;
+
         IEnumerable<FileInfo> CandidateFiles(CleanupTarget t)
         {
             if (t.OnDemand) yield break;
-            var limit = t.IgnoreAge ? DateTime.MaxValue : DateTime.Now - MinAge;
+            var limit = Limit(t);
             foreach (var root in t.Roots)
             {
                 // Trava dos navegadores: so pastas com nome de cache conhecido.
@@ -150,7 +190,7 @@ namespace Rogerin.Core
                 if (!dir.Exists) continue;
                 foreach (var f in SafeEnumerate(dir, t.Pattern))
                 {
-                    if (f.LastWriteTime >= limit) continue;
+                    if (f.LastWriteTime >= limit || f.CreationTime >= limit) continue;
                     if (t.IsBrowser && Browsers.ProtectedFiles.Contains(f.Name)) continue;
                     yield return f;
                 }
@@ -187,6 +227,71 @@ namespace Rogerin.Core
             return false;
         }
 
+        /// <summary>Processos do navegador na sessao do usuario logado no console (em servidor RDS, as outras sessoes ficam).</summary>
+        static List<Process> BrowserProcesses(CleanupTarget t)
+        {
+            var session = (int)Native.WTSGetActiveConsoleSessionId();
+            var mine = new List<Process>();
+            foreach (var p in t.Processes.SelectMany(n => Process.GetProcessesByName(n)))
+            {
+                bool same;
+                try { same = p.SessionId == session; }
+                catch (InvalidOperationException) { same = false; } // saiu durante a busca
+                if (same) mine.Add(p); else p.Dispose();
+            }
+            return mine;
+        }
+
+        /// <summary>
+        /// Fecha o navegador antes de limpar: primeiro pede para as janelas fecharem (como clicar no X),
+        /// depois de alguns segundos encerra o que sobrou (processos em segundo plano, Inicialização turbo do Edge).
+        /// </summary>
+        public static void CloseBrowser(CleanupTarget t)
+        {
+            if (t.Processes == null) return;
+            var until = DateTime.Now.AddSeconds(8);
+            while (DateTime.Now < until)
+            {
+                var procs = BrowserProcesses(t);
+                if (procs.Count == 0) return;
+                var windows = 0;
+                foreach (var p in procs)
+                {
+                    try { if (p.MainWindowHandle != IntPtr.Zero) { p.CloseMainWindow(); windows++; } }
+                    catch (InvalidOperationException) { }
+                    p.Dispose();
+                }
+                if (windows == 0) break; // so processos em segundo plano: nao ha janela para esperar
+                System.Threading.Thread.Sleep(500);
+            }
+            foreach (var p in BrowserProcesses(t))
+            {
+                try { p.Kill(); p.WaitForExit(5000); }
+                catch (InvalidOperationException) { }              // ja saiu
+                catch (System.ComponentModel.Win32Exception) { }    // sem permissao ou encerrando
+                p.Dispose();
+            }
+            System.Threading.Thread.Sleep(1000); // o Windows solta os arquivos de cache logo depois
+        }
+
+        /// <summary>Apaga as subpastas que ficaram vazias (a raiz fica). Nao segue junctions.</summary>
+        static void RemoveEmptyDirs(DirectoryInfo dir, DateTime limit, bool isRoot = true)
+        {
+            DirectoryInfo[] subs;
+            try { subs = dir.GetDirectories(); }
+            catch (UnauthorizedAccessException) { return; }
+            catch (IOException) { return; }
+            foreach (var s in subs)
+                if ((s.Attributes & FileAttributes.ReparsePoint) == 0) RemoveEmptyDirs(s, limit, false);
+            if (isRoot) return;
+            try
+            {
+                if (dir.CreationTime < limit && !dir.EnumerateFileSystemInfos().Any()) dir.Delete();
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
         public void Measure(CleanupTarget t)
         {
             var files = CandidateFiles(t).ToList();
@@ -195,8 +300,8 @@ namespace Rogerin.Core
             t.Running = IsRunning(t);
         }
 
-        /// <summary>Retorna bytes liberados.</summary>
-        public long Clean(CleanupTarget t)
+        /// <summary>Retorna bytes liberados. <paramref name="progress"/> recebe a fração concluída (0 a 1).</summary>
+        public long Clean(CleanupTarget t, IProgress<double> progress = null)
         {
             // So o cache do resolvedor: nao libera/renova IP nem mexe no adaptador.
             if (t.IsDnsCache)
@@ -213,13 +318,28 @@ namespace Rogerin.Core
                 ActionRunner.StartSystemTool("defrag.exe", t.Path + " /O");
                 return 0;
             }
+            if (t.IsBrowser) CloseBrowser(t);
             long freed = 0;
-            foreach (var f in CandidateFiles(t).ToList())
+            var files = CandidateFiles(t).ToList();
+            int done = 0, reported = -1;
+            foreach (var f in files)
             {
-                try { var len = f.Length; f.Delete(); freed += len; }
+                try
+                {
+                    var len = f.Length;
+                    if ((f.Attributes & FileAttributes.ReadOnly) != 0) f.Attributes &= ~FileAttributes.ReadOnly;
+                    f.Delete(); freed += len;
+                }
                 catch (IOException) { }                 // em uso pelo navegador ou pelo sistema
                 catch (UnauthorizedAccessException) { }
+                var pct = ++done * 100 / files.Count;
+                if (pct != reported) { reported = pct; progress?.Report(pct / 100.0); }
             }
+            // Temporarios: as pastas que sobram vazias tambem saem (instaladores deixam muitas).
+            if (!t.IsBrowser && t.Pattern == "*")
+                foreach (var root in t.Roots.Where(Directory.Exists))
+                    RemoveEmptyDirs(new DirectoryInfo(root), Limit(t));
+            progress?.Report(1);
             return freed;
         }
     }

@@ -122,9 +122,12 @@ namespace Rogerin
                 {
                     var profiles = Target.ProfileCount == 1 ? "1 perfil" : $"{Target.ProfileCount} perfis";
                     var text = $"Cache de páginas, imagens, scripts e GPU ({profiles}). Senhas, favoritos, histórico, cookies e extensões são preservados.";
-                    return Target.Running ? text + " O navegador está aberto: feche-o para limpar tudo." : text;
+                    return Target.Running ? text + " O navegador está aberto: o Rogerin vai fechá-lo antes de limpar." : text;
                 }
-                return $"Apaga arquivos com mais de 1 dia em {Target.Path}. Não pode ser desfeito.";
+                if (Target.Pattern == "*.pf")
+                    return $"Apaga os rastros de inicialização de programas (*.pf) com mais de 2 horas em {Target.Path}. O Windows os recria: os programas podem abrir um pouco mais devagar na primeira vez. Não pode ser desfeito.";
+                var more = Target.Roots.Count() > 1 ? $" e mais {Target.Roots.Count() - 1} pastas" : "";
+                return $"Apaga arquivos com mais de 2 horas e as pastas que ficarem vazias em {Target.Path}{more}. Arquivos em uso ficam. Não pode ser desfeito.";
             }
         }
         public override string Category => Target.Group;
@@ -139,6 +142,7 @@ namespace Rogerin
             : Target.IsDiskCleanup ? $@"{System.Environment.SystemDirectory}\cleanmgr.exe /sagerun" + "\nfora: " + string.Join(", ", Cleanup.DiskCleanupExcluded)
             : string.Join("\n", Target.Roots) + $"\n{Target.Files:N0} arquivos";
     }
+
 
     public class BackupItem
     {

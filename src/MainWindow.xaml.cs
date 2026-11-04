@@ -50,8 +50,9 @@ namespace Rogerin
             });
             if (_engine == null) return;
 
+
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            VersionText.Text = $"Versão {v.Major}.{v.Minor}.{v.Build}\n{_engine.Catalog.Tweaks.Count} ajustes no catálogo";
+            VersionText.Text = $"Versão {v.Major}.{v.Minor}.{v.Build}\n{_engine.Catalog.Tweaks.Count} ajustes no catálogo\n© 2026 Gabriel Gomes Batista";
             _log.Write($"Sessão iniciada. Operador {Environment.UserDomainName}\\{Environment.UserName}; ajustes de usuário vão para {_engine.User.Account}.");
 
             var sys2 = _engine.System;
@@ -69,6 +70,13 @@ namespace Rogerin
             HistoryIntro.Text = $"Cada aplicação gera um backup em {Engine.BackupDir}. Desfazer devolve os valores exatos que existiam antes. " +
                                 "Apps removidos e arquivos limpos não voltam pelo desfazer.";
             RenderBanners();
+            // Plano de energia agendado para depois do reinicio (Modern Standby): confirma ou ativa agora.
+            var pending = await Task.Run(() =>
+            {
+                try { return ActionRunner.ActivatePendingPowerPlan(); }
+                catch (Exception ex) { return "[perf.power-plan] Ativação pendente falhou: " + ex.Message; }
+            });
+            if (pending != null) _log.Write(pending);
             await RefreshAsync();
             LoadHistory();
 
@@ -195,9 +203,11 @@ namespace Rogerin
                 lines.Add(c.Target.IsDnsCache ? "Limpeza: esvaziar cache DNS (o IP e a conexão não mudam)"
                     : c.Target.IsDiskCleanup ? $"Limpeza: rodar a Limpeza de Disco do Windows em {c.Target.Path} com todas as opções (inclui Limpeza do Windows Update e esvaziar a Lixeira; pasta Downloads fica)."
                     : c.Target.IsDiskOptimize ? $"Disco: iniciar a desfragmentação de {c.Target.Path} em segundo plano (defrag.exe /O). O disco fica ocupado até terminar."
-                    : c.Target.IsBrowser ? $"Navegador: apagar o cache do {c.Target.BrowserName} ({c.Target.Files:N0} arquivos, {c.Target.SizeLabel}). Senhas, favoritos, histórico e cookies ficam."
-                        + (c.Target.Running ? " ATENÇÃO: navegador aberto, arquivos em uso serão pulados." : "")
-                    : $"Limpeza: apagar {c.Target.Files:N0} arquivos antigos ({c.Target.SizeLabel}) em {c.Target.Path}");
+                    : c.Target.IsBrowser ? $"Navegador: fechar o {c.Target.BrowserName} e apagar o cache ({c.Target.Files:N0} arquivos, {c.Target.SizeLabel}). Senhas, favoritos, histórico e cookies ficam."
+                        + (c.Target.Running ? " ATENÇÃO: o navegador está aberto e será fechado. Peça ao usuário para salvar o que estiver preenchendo." : "")
+                    : c.Target.Pattern != "*" ? $"Limpeza: apagar {c.Target.Files:N0} arquivos {c.Target.Pattern} ({c.Target.SizeLabel}) em {c.Target.Path}"
+                    : $"Limpeza: apagar {c.Target.Files:N0} arquivos antigos ({c.Target.SizeLabel}) e as pastas vazias em {c.Target.Path}"
+                        + (c.Target.Roots.Count() > 1 ? $" e mais {c.Target.Roots.Count() - 1} pastas" : ""));
             if (lines.Count == 0) { _log.Write("Os itens marcados já estão aplicados."); return; }
 
             var restore = RestorePointBox.IsChecked == true && tweaks.Count > 0;
@@ -220,12 +230,31 @@ namespace Rogerin
                                (reboot ? " Reinicie o computador para concluir." : " Alguns itens valem após sair e entrar de novo na conta."));
                 }
                 long freed = 0;
-                foreach (var c in cleans)
+                // Barra geral da limpeza: cada item vale uma parte igual; itens com arquivos avançam arquivo a arquivo.
+                CleanupBar.Value = 0;
+                CleanupPercent.Text = "0%";
+                CleanupOverlay.Visibility = cleans.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                for (int i = 0; i < cleans.Count; i++)
                 {
-                    BusyText.Text = c.Target.IsDiskCleanup ? "Limpeza de Disco do Windows em andamento (pode levar vários minutos)…" : "Limpando: " + c.Name;
+                    var c = cleans[i];
+                    var step = i;
+                    var label = c.Target.IsDiskCleanup ? "Limpeza de Disco do Windows em andamento (pode levar vários minutos)"
+                        : c.Target.IsBrowser && c.Target.Running ? $"Fechando o {c.Target.BrowserName} e limpando"
+                        : "Limpando: " + c.Name;
+                    void Show(double fraction)
+                    {
+                        var total = (step + fraction) / cleans.Count;
+                        CleanupBar.Value = total;
+                        CleanupPercent.Text = $"{(int)(total * 100)}%";
+                        CleanupStep.Text = $"Item {step + 1} de {cleans.Count}";
+                        CleanupItemText.Text = label + "…";
+                        BusyText.Text = $"{label}… {(int)(total * 100)}%";
+                    }
+                    Show(0);
+                    var itemProgress = new Progress<double>(Show);
                     try
                     {
-                        var f = await Task.Run(() => _cleanup.Clean(c.Target));
+                        var f = await Task.Run(() => _cleanup.Clean(c.Target, itemProgress));
                         freed += f;
                         _log.Write(c.Target.IsDnsCache ? "Cache DNS esvaziado (IP e conexão não foram alterados)."
                             : c.Target.IsDiskCleanup ? $"Limpeza de Disco do Windows concluída: {new CleanupTarget { Bytes = f }.SizeLabel} liberados em {c.Target.Path}."
@@ -233,7 +262,9 @@ namespace Rogerin
                             : $"Limpeza: {c.Name} liberou {new CleanupTarget { Bytes = f }.SizeLabel}.");
                     }
                     catch (Exception ex) { _log.Write($"Limpeza: {c.Name}: {ex.Message}"); }
+                    Show(1);
                 }
+                CleanupOverlay.Visibility = Visibility.Collapsed;
                 if (cleans.Any(c => !c.Target.OnDemand || c.Target.IsDiskCleanup)) _log.Write($"Limpeza concluída: {new CleanupTarget { Bytes = freed }.SizeLabel} liberados.");
             });
             await RefreshAsync();
@@ -317,6 +348,7 @@ namespace Rogerin
 
         #endregion
 
+
         #region Historico
 
         void LoadHistory()
@@ -395,7 +427,7 @@ namespace Rogerin
             IsEnabled = false;
             try { await work(); }
             catch (Exception ex) { _log.Write("ERRO: " + ex.Message); }
-            finally { IsEnabled = true; BusyText.Text = ""; }
+            finally { IsEnabled = true; BusyText.Text = ""; CleanupOverlay.Visibility = Visibility.Collapsed; }
         }
 
         #endregion

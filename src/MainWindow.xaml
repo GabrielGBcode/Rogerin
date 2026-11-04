@@ -242,6 +242,7 @@
                 </StackPanel>
             </ScrollViewer>
 
+
             <!-- ============ HISTÓRICO E LOGS ============ -->
             <Grid x:Name="PageHistory" Grid.Row="1" Visibility="Collapsed" Margin="24,20,24,16">
                 <Grid.RowDefinitions>
@@ -279,6 +280,25 @@
         </Grid>
 
         <!-- Confirmação: lista exata do que vai mudar -->
+        <!-- Progresso da limpeza: aparece assim que a limpeza começa e some ao terminar -->
+        <Grid x:Name="CleanupOverlay" Grid.ColumnSpan="2" Visibility="Collapsed" Background="{StaticResource Scrim}">
+            <Border Style="{StaticResource Card}" Width="520" Padding="28,24" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock x:Name="CleanupPercent" DockPanel.Dock="Right" Text="0%" FontSize="30" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Accent}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource H1}" Text="Limpando…"/>
+                            <TextBlock x:Name="CleanupStep" Style="{StaticResource Body}" FontSize="12" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <ProgressBar x:Name="CleanupBar" Height="10" Margin="0,16,0,10" Maximum="1"
+                                 Foreground="{StaticResource Accent}" Background="{StaticResource NaBg}" BorderThickness="0"/>
+                    <TextBlock x:Name="CleanupItemText" Style="{StaticResource Body}" FontSize="13" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
         <Grid x:Name="ConfirmOverlay" Grid.ColumnSpan="2" Visibility="Collapsed" Background="{StaticResource Scrim}">
             <Border Style="{StaticResource Card}" Width="780" MaxHeight="600" Padding="24" VerticalAlignment="Center" HorizontalAlignment="Center">
                 <DockPanel>
