@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+*.user
+dist/
+.claude/
+docs/screens/audit.json
+
+# Analise do Microsoft PC Manager (binarios/decompilado de terceiros): nunca publicar.
+Manager/
+
+Reports/

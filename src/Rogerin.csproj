@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Rogerin</RootNamespace>
+    <AssemblyName>Rogerin</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Rogerin.ico</ApplicationIcon>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Version>2.1.4</Version>
+    <Company>Gabriel Gomes Batista</Company>
+    <Product>Rogerin</Product>
+    <Description>Otimizacao auditavel e reversivel para Windows 10 e 11</Description>
+    <Copyright>© 2026 Gabriel Gomes Batista. Todos os direitos reservados.</Copyright>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- O catalogo vai embutido no exe: um unico arquivo para a TI distribuir. -->
+    <EmbeddedResource Include="..\catalog\tweaks.json" LogicalName="Rogerin.tweaks.json" />
+    <!-- O .ico entra so como icone Win32 do exe (a janela WPF o herda); o PNG e o logo da barra lateral. -->
+    <Resource Include="Assets\logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.ServiceProcess" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Runtime" />
+    <Reference Include="System.Runtime.WindowsRuntime">
+      <HintPath>$(SystemRoot)\Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- WinRT (PackageManager) lido direto dos metadados do proprio Windows: sem pacotes extras. -->
+    <Reference Include="Windows.Foundation">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Foundation.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows.Management">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.Management.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows.ApplicationModel">
+      <HintPath>$(SystemRoot)\System32\WinMetadata\Windows.ApplicationModel.winmd</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Build Release: copia o exe final para <raiz>\dist\Rogerin.exe, o arquivo que a TI distribui. -->
+  <Target Name="CopyToDist" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildProjectDirectory)\..\dist" />
+  </Target>
+
+</Project>
