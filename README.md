@@ -4,17 +4,32 @@ Otimizador para Windows 10 e 11 feito para uso da equipe de TI em ambiente corpo
 
 - **Um único `Rogerin.exe`**, WPF sobre .NET Framework 4.8, que já vem no Windows 10 1903+ e no Windows 11. Não precisa instalar nada.
 - **Sempre como Administrador**: o manifesto exige UAC e o programa se recusa a abrir sem elevação.
-- **Sem scripts**: nenhuma chamada a PowerShell, cmd, `ipconfig` ou `netsh`. As mudanças usam APIs do Windows: Registro, Service Control Manager, COM do Agendador de Tarefas, WinRT `PackageManager` e `powrprof`. Os únicos executáveis externos permitidos são `powercfg.exe`, `defrag.exe` e `cleanmgr.exe`, todos do próprio Windows (lista fixa em `ActionRunner.AllowedTools`).
-- **Rede sem queda**: nenhum ajuste libera ou renova IP, nem reseta Winsock ou a pilha TCP/IP. A opção "Limpar cache DNS" chama `DnsFlushResolverCache` e não altera IP nem conexão.
-- **Auditável e reversível**: análise somente leitura, confirmação com a lista exata do que muda, ponto de restauração, backup JSON por aplicação e log diário.
+- **Sem scripts**: nenhuma chamada a PowerShell, cmd, `ipconfig` ou `netsh`. As mudanças usam APIs do Windows: Registro, Service Control Manager, COM do Agendador de Tarefas, WinRT `PackageManager` e `powrprof`. Os únicos executáveis externos permitidos são `powercfg.exe`, `defrag.exe` e `cleanmgr.exe`, todos do próprio Windows (lista fixa em `ActionRunner.AllowedTools`); o desinstalador de cada programa é o único outro processo que o Rogerin inicia, sempre com o comando separado pelo próprio Windows (`CommandLineToArgvW`), nunca por um shell.
+- **Rede sem queda**: nenhum ajuste libera ou renova IP, nem reseta Winsock, adaptador ou a pilha TCP/IP. A opção "Limpar cache DNS" chama `DnsFlushResolverCache` e os itens de "Rede" só tocam proxy (`ProxyEnable`, `http_proxy`/`https_proxy`) — nada disso altera IP nem conexão.
+- **Não mexe nos logs do Windows**: o Rogerin não limpa, desativa nem lê o Visualizador de Eventos. A limpeza de disco apaga só arquivos e cache (temporários, relatórios de erro antigos etc.), nunca o log de eventos do Windows.
+- **Leve**: um único processo, sem serviço nem tarefa persistente rodando em segundo plano. Fecha e não deixa nada residente; a única tarefa agendada que chega a existir (plano de energia após liberar o Modern Standby) se apaga sozinha.
+- **Auditável e reversível**: análise somente leitura, confirmação com a lista exata do que muda, ponto de restauração, backup JSON por aplicação e log diário. Exceções deliberadas, porque não fazem sentido como "configuração para desfazer": liberar RAM é uma ação pontual, e apagar resíduos de uma desinstalação é irreversível por natureza — por isso essas duas sempre pedem confirmação explícita com o que exatamente vai acontecer.
 
 ## Telas
 
 | Tela | Para quê |
 |---|---|
-| **Ajustes** (abre nela) | Escolher o nível (Básico, Recomendado ou Completo) e clicar em Aplicar. Cada linha inteira é clicável. Há "Marcar tudo", "Desmarcar tudo" e "Marcar categoria". A Limpeza fica nesta mesma lista. |
-| Computador | Especificações (SO, domínio, CPU, GPU, RAM, disco, número de série) e quantos ajustes já estão aplicados. |
-| Histórico e logs | Backups de cada aplicação com botão de desfazer, e o registro da sessão. |
+| **Otimização** (abre nela) | Escolher o nível (Básico, Recomendado ou Completo) e clicar em Aplicar. Cada linha inteira é clicável. Há "Marcar tudo", "Desmarcar tudo" e "Marcar categoria". **Liberar RAM** é sempre a primeira opção, já vem marcada em qualquer nível; a Limpeza fica na mesma lista. |
+| Computador | Especificações (SO, domínio, CPU, GPU, RAM livre/total, disco, número de série) e quantos ajustes já estão aplicados. |
+| Inicialização | Lista os programas de `Run` e da pasta Inicializar (usuário e máquina) e deixa habilitar/desabilitar cada um. O programa nunca é removido, só deixa de abrir sozinho; reversível a qualquer momento na própria tela. Colunas redimensionáveis e ordenáveis (clique no título). |
+| Desinstalar programas | A mesma lista de "Aplicativos e recursos" do Windows. Roda o desinstalador do próprio programa e, se sobrar algo no registro ou no disco depois, mostra cada item com sua própria caixinha e pergunta antes de apagar. |
+| Histórico e logs | Backups de cada aplicação de ajustes com botão de desfazer, e o registro da sessão. |
+
+### Liberar RAM
+Primeira opção da lista de Otimização, sempre marcada nos 3 níveis. Esvazia as listas de memória em espera do Windows (standby, modificada e working sets) com a API nativa do Windows (`NtSetSystemInformation`) — não mata nem mexe em nenhum processo. Diferente dos outros itens, o rótulo não é "aplicado/pendente": é uma recomendação com base no uso atual da RAM — **Em dia** (até 30% em uso), **Moderado** (31–75%) ou **Recomendado** (acima de 75%). É uma ação pontual (como a limpeza), por isso entra no backup só para constar no log, não para desfazer — liberar RAM de novo não tem "valor anterior" para devolver.
+
+### Inicialização
+Lê `Run`/`RunOnce` (HKCU e HKLM) e a pasta Inicializar de quem está logado e de todos os usuários, junto com o flag que o próprio Gerenciador de Tarefas usa (`StartupApproved`) para saber se cada item está habilitado. Desabilitar grava esse mesmo flag — o programa continua instalado e registrado, só não abre no próximo logon. Colunas redimensionáveis (arraste a borda do título) e ordenáveis (clique no título); a coluna Comando começa estreita e o botão Habilitar/Desabilitar fica sempre visível sem precisar rolar a tela.
+
+### Desinstalar programas
+Lista `...\CurrentVersion\Uninstall` (64 bits, 32 bits e do usuário), com os mesmos filtros do próprio Windows (sem nome ou marcado como componente do sistema não aparece). A string de desinstalação salva no registro é sempre separada em executável e argumentos pelo próprio Windows (`CommandLineToArgvW`) — **nunca** passa por `cmd.exe` ou outro shell, e o comando exato aparece na confirmação antes de rodar. O código de saída do desinstalador é conferido e mostrado (alguns instaladores retornam código diferente de 0 por motivo benigno, como pedido de reinício; isso aparece no log, não é tratado como falha automática).
+
+Depois, o Rogerin procura o que sobrou: a mesma chave de registro e a mesma pasta de instalação, mais uma varredura pelo nome **exato** da pasta do programa (nunca um texto parecido, nunca o nome do fabricante) em `%AppData%`, `%LocalAppData%`, `%LocalAppData%\Low`, `%ProgramData%` e em `Software` do registro (HKCU/HKLM). Cada resíduo encontrado aparece com sua própria caixinha — nada é apagado sem o técnico escolher item por item (ou "Selecionar todos") e confirmar.
 
 Os níveis vêm do campo `risk` do catálogo: **Básico** = `safe`, **Recomendado** = `safe` + `moderate`, **Completo** = tudo. Os itens de limpeza e de navegadores entram em todos os níveis.
 
@@ -62,10 +77,11 @@ Na abertura, o app identifica o disco físico da unidade do sistema pela API de 
 ## Estrutura
 
 ```
-catalog/            tweaks.json (37 ajustes), embutido no exe
+catalog/            tweaks.json (41 ajustes), embutido no exe
 dist/               Rogerin.exe pronto para distribuir (gerado no build Release)
 src/                código do aplicativo WPF (tema escuro único)
-  Core/             motor: Catalog, Engine, ActionRunner, Cleanup, SystemInfo, UserContext, Native, Log
+  Core/             motor: Catalog, Engine, ActionRunner, Cleanup, SystemInfo, UserContext, Native, Log,
+                    Memory (liberar RAM), Startup (inicialização), Uninstall (desinstalador)
 tools/Rogerin.Preview  ferramenta de dev: auditoria somente leitura + capturas de tela (não aplica nada)
 docs/screens/       capturas geradas e audit.json da máquina de desenvolvimento
 docs/brand/         ícone original (rogerin-original.ico); o app usa src/Assets/Rogerin.ico, versão otimizada

@@ -30,11 +30,13 @@ namespace Rogerin
         public virtual string Details => null;
         public virtual bool GpoManaged => false;
         public virtual bool RebootRequired => false;
+        /// <summary>Só o item de Liberar RAM mostra um botão de executar isolado, fora da seleção em lote.</summary>
+        public virtual Visibility MemoryActionVisibility => Visibility.Collapsed;
 
         bool _selected;
         public bool IsSelected { get => _selected; set { if (_selected == value) return; _selected = value; Raise(); } }
 
-        public bool InLevel(Level level) =>
+        public virtual bool InLevel(Level level) =>
             level == Level.Complete || Risk == "safe" || (level == Level.Recommended && Risk == "moderate");
 
         static Brush B(string key) => (Brush)Application.Current.Resources[key];
@@ -143,6 +145,73 @@ namespace Rogerin
             : string.Join("\n", Target.Roots) + $"\n{Target.Files:N0} arquivos";
     }
 
+
+    /// <summary>
+    /// Liberar RAM, dentro da lista de Otimização: sempre a primeira opção, sempre marcada em qualquer
+    /// nível e sempre selecionável (não é "aplicado uma vez e pronto" como os outros itens). O rótulo
+    /// é uma recomendação do nível de uso atual da RAM, não um status de "aplicado/pendente".
+    /// </summary>
+    public class MemoryItem : OptionItem
+    {
+        public const string CategoryName = "Otimização";
+
+        double _usedPercent;
+        bool _measured;
+        public void Measured(double totalGB, double freeGB)
+        {
+            _usedPercent = totalGB > 0 ? 100.0 * (totalGB - freeGB) / totalGB : 0;
+            _freeGB = freeGB;
+            _measured = true;
+            RaiseState(); Raise(nameof(Description));
+        }
+        double _freeGB;
+
+        public override string Name => "Liberar RAM";
+        public override string Description => !_measured ? "Medindo o uso de memória…"
+            : $"Esvazia as listas de memória em espera do Windows (standby, modificada e working sets). Não encerra nem altera nenhum processo. Uso atual: {_usedPercent:0}% ({_freeGB:0.#} GB livres).";
+        public override string Category => CategoryName;
+        public override string Risk => "safe";
+        public override bool IsVisible => true;
+        public override bool CanSelect => true;
+        public override bool InLevel(Level level) => true; // sempre marcado nos 3 níveis
+
+        public override string StatusLabel => !_measured ? "Medindo…" : _usedPercent <= 30 ? "Em dia" : _usedPercent <= 75 ? "Moderado" : "Recomendado";
+        protected override string Tone => !_measured ? "Na" : _usedPercent <= 30 ? "Ok" : _usedPercent <= 75 ? "Info" : "Warn";
+        public override Visibility MemoryActionVisibility => Visibility.Visible;
+    }
+
+    public class StartupRow : Observable
+    {
+        public StartupEntry Entry { get; }
+        public StartupRow(StartupEntry e) { Entry = e; }
+        public string Name => Entry.Name;
+        public string Command => Entry.Command;
+        public string Source => Entry.Source;
+        public string StatusText => Entry.Enabled ? "Habilitado" : "Desabilitado";
+        public string ToggleLabel => Entry.Enabled ? "Desabilitar" : "Habilitar";
+        public void Refresh() { Raise(nameof(StatusText)); Raise(nameof(ToggleLabel)); }
+    }
+
+    /// <summary>Um resíduo encontrado (chave de registro ou pasta), com caixinha própria na confirmação.</summary>
+    public class ResidueRow : Observable
+    {
+        public ResidueCandidate Candidate { get; }
+        public ResidueRow(ResidueCandidate c) { Candidate = c; Checked = true; }
+        public string Label => (Candidate.Kind == ResidueKind.Registry ? "Chave de registro: " : "Pasta: ") + Candidate.Path;
+
+        bool _checked;
+        public bool Checked { get => _checked; set { _checked = value; Raise(); } }
+    }
+
+    public class UninstallRow
+    {
+        public InstalledApp App { get; }
+        public UninstallRow(InstalledApp a) { App = a; }
+        public string Name => App.DisplayName;
+        public string Publisher => App.Publisher;
+        public string Version => App.Version;
+        public string Size => App.SizeLabel;
+    }
 
     public class BackupItem
     {

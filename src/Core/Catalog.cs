@@ -52,7 +52,7 @@ namespace Rogerin.Core
         {
             switch (Type)
             {
-                case "registry": return $@"{Path}\{Name} = {Value}";
+                case "registry": return ValueType == "absent" ? $@"{Path}\{Name} → remover" : $@"{Path}\{Name} = {Value}";
                 case "service": return $"Serviço {Name} → {StartType}";
                 case "task": return $@"Tarefa {Path}\{Name} → {State}";
                 case "appx": return $"Remover app {Package}";

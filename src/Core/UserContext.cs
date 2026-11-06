@@ -15,6 +15,17 @@ namespace Rogerin.Core
         public string Account { get; private set; }
         public bool IsDifferentFromElevatedUser { get; private set; }
 
+        /// <summary>
+        /// Pasta do perfil (C:\Users\nome) pelo SID, não pela conta do processo: se o técnico elevou com
+        /// outra conta, é a pasta do usuário logado no console que importa, não a dele. Null se não achar.
+        /// </summary>
+        public string ProfileFolder()
+        {
+            using (var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)
+                .OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + Sid))
+                return key?.GetValue("ProfileImagePath") as string;
+        }
+
         /// <summary>Perfil de um backup antigo. Null se o perfil nao esta carregado (usuario nao logado).</summary>
         public static UserContext Loaded(string sid, string account)
         {

@@ -102,9 +102,17 @@ namespace Rogerin.Preview
             await Settle();
             Snap(win, Path.Combine(outDir, "5-computador.png"));
 
+            Find<RadioButton>(win, "NavStartup").IsChecked = true;
+            await Settle();
+            Snap(win, Path.Combine(outDir, "6-inicializacao.png"));
+
+            Find<RadioButton>(win, "NavUninstall").IsChecked = true;
+            await Settle();
+            Snap(win, Path.Combine(outDir, "7-desinstalar.png"));
+
             Find<RadioButton>(win, "NavHistory").IsChecked = true;
             await Settle();
-            Snap(win, Path.Combine(outDir, "6-historico.png"));
+            Snap(win, Path.Combine(outDir, "8-historico.png"));
         }
 
         static async Task Settle()

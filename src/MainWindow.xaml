@@ -22,8 +22,10 @@
             </DockPanel>
             <TextBlock DockPanel.Dock="Bottom" x:Name="VersionText" Foreground="{StaticResource Faint}" FontSize="11" Margin="22,0,22,18" TextWrapping="Wrap"/>
             <StackPanel>
-                <RadioButton x:Name="NavTweaks" Style="{StaticResource Nav}" GroupName="nav" IsChecked="True" Checked="Nav_Checked" Content="Ajustes"/>
+                <RadioButton x:Name="NavTweaks" Style="{StaticResource Nav}" GroupName="nav" IsChecked="True" Checked="Nav_Checked" Content="Otimização"/>
                 <RadioButton x:Name="NavComputer" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Computador"/>
+                <RadioButton x:Name="NavStartup" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Inicialização"/>
+                <RadioButton x:Name="NavUninstall" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Desinstalar programas"/>
                 <RadioButton x:Name="NavHistory" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Histórico e logs"/>
             </StackPanel>
         </DockPanel>
@@ -130,6 +132,10 @@
                             </ItemsControl.GroupStyle>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right" Style="{StaticResource BtnBase}" Content="Executar" Padding="16,8" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                Visibility="{Binding MemoryActionVisibility}" Click="RunMemoryBoost_Click"
+                                                ToolTip="Libera a RAM agora, isolado: sem ponto de restauração e sem confirmação."/>
                                     <CheckBox Style="{StaticResource OptionRow}" IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanSelect}"
                                               Opacity="{Binding RowOpacity}" ToolTip="{Binding Details}" ToolTipService.ShowDuration="60000"
                                               ToolTipService.ShowOnDisabled="True" AutomationProperties.Name="{Binding Name}">
@@ -157,6 +163,7 @@
                                             </Border>
                                         </Grid>
                                     </CheckBox>
+                                    </DockPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -183,6 +190,7 @@
                                 <TextBlock Style="{StaticResource Label}" Text="MEMÓRIA"/>
                                 <TextBlock x:Name="RamText" FontSize="30" FontWeight="SemiBold" Margin="0,6,0,0"/>
                                 <TextBlock x:Name="CpuText" Style="{StaticResource Body}"/>
+                                <TextBlock x:Name="RamFreeText" Style="{StaticResource Body}" Margin="0,2,0,0"/>
                             </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Card}" Margin="6">
@@ -242,6 +250,66 @@
                 </StackPanel>
             </ScrollViewer>
 
+            <!-- ============ INICIALIZAÇÃO ============ -->
+            <Grid x:Name="PageStartup" Grid.Row="1" Visibility="Collapsed" Margin="24,20,24,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H1}" Text="Inicialização"/>
+                    <TextBlock Style="{StaticResource Body}" Margin="0,4,0,4"
+                               Text="Programas que abrem no logon (Run e a pasta Inicializar), do usuário e de todos os usuários. Desabilitar só impede o programa de abrir sozinho: ele continua instalado e pode ser reativado aqui a qualquer momento. Clique no título de uma coluna para ordenar; arraste a borda do título para redimensionar."/>
+                    <TextBlock x:Name="StartupStatusText" Style="{StaticResource Body}" Foreground="{StaticResource Accent}" Margin="0,0,0,10"/>
+                </StackPanel>
+                <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
+                    <ListView x:Name="StartupList" BorderThickness="0" Background="Transparent" Foreground="{StaticResource Ink}">
+                        <ListView.View>
+                            <GridView AllowsColumnReorder="False">
+                                <GridViewColumn x:Name="ColStartupName" Header="Nome" Width="160" DisplayMemberBinding="{Binding Name}"/>
+                                <GridViewColumn x:Name="ColStartupSource" Header="Origem" Width="190" DisplayMemberBinding="{Binding Source}"/>
+                                <GridViewColumn x:Name="ColStartupCommand" Header="Comando" Width="160" DisplayMemberBinding="{Binding Command}"/>
+                                <GridViewColumn x:Name="ColStartupState" Header="Estado" Width="100" DisplayMemberBinding="{Binding StatusText}"/>
+                                <GridViewColumn x:Name="ColStartupToggle" Width="110">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource LinkButton}" Content="{Binding ToggleLabel}" Click="ToggleStartup_Click"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Border>
+            </Grid>
+
+            <!-- ============ DESINSTALAR PROGRAMAS ============ -->
+            <Grid x:Name="PageUninstall" Grid.Row="1" Visibility="Collapsed" Margin="24,20,24,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H1}" Text="Desinstalar programas"/>
+                    <TextBlock Style="{StaticResource Body}" Margin="0,4,0,12"
+                               Text="A mesma lista de Aplicativos e recursos do Windows. Selecione um programa na lista e clique em Desinstalar: o Rogerin roda o desinstalador do próprio programa (nunca um script), sempre mostrando o comando exato antes de executar."/>
+                    <Button x:Name="UninstallButton" Style="{StaticResource BtnPrimary}" Content="Desinstalar selecionado" Click="Uninstall_Click" Margin="0,0,0,8" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="UninstallStatusText" Style="{StaticResource Body}" Foreground="{StaticResource Accent}" Margin="0,0,0,10"/>
+                </StackPanel>
+                <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
+                    <ListView x:Name="UninstallList" BorderThickness="0" Background="Transparent" Foreground="{StaticResource Ink}">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn x:Name="ColUninstallName" Header="Nome" Width="300" DisplayMemberBinding="{Binding Name}"/>
+                                <GridViewColumn x:Name="ColUninstallPublisher" Header="Editor" Width="220" DisplayMemberBinding="{Binding Publisher}"/>
+                                <GridViewColumn x:Name="ColUninstallVersion" Header="Versão" Width="120" DisplayMemberBinding="{Binding Version}"/>
+                                <GridViewColumn x:Name="ColUninstallSize" Header="Tamanho" Width="100" DisplayMemberBinding="{Binding Size}"/>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Border>
+            </Grid>
+
 
             <!-- ============ HISTÓRICO E LOGS ============ -->
             <Grid x:Name="PageHistory" Grid.Row="1" Visibility="Collapsed" Margin="24,20,24,16">
@@ -288,7 +356,7 @@
                         <TextBlock x:Name="CleanupPercent" DockPanel.Dock="Right" Text="0%" FontSize="30" FontWeight="SemiBold"
                                    Foreground="{StaticResource Accent}" VerticalAlignment="Center" Margin="16,0,0,0"/>
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Style="{StaticResource H1}" Text="Limpando…"/>
+                            <TextBlock x:Name="CleanupTitle" Style="{StaticResource H1}" Text="Aplicando…"/>
                             <TextBlock x:Name="CleanupStep" Style="{StaticResource Body}" FontSize="12" Margin="0,2,0,0"/>
                         </StackPanel>
                     </DockPanel>
@@ -296,6 +364,33 @@
                                  Foreground="{StaticResource Accent}" Background="{StaticResource NaBg}" BorderThickness="0"/>
                     <TextBlock x:Name="CleanupItemText" Style="{StaticResource Body}" FontSize="13" TextWrapping="Wrap"/>
                 </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Limpar resíduos: cada item encontrado tem sua própria caixinha -->
+        <Grid x:Name="ResidueOverlay" Grid.ColumnSpan="2" Visibility="Collapsed" Background="{StaticResource Scrim}">
+            <Border Style="{StaticResource Card}" Width="780" MaxHeight="600" Padding="24" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock Style="{StaticResource H1}" x:Name="ResidueTitle"/>
+                        <TextBlock Style="{StaticResource Body}" x:Name="ResidueIntro" Margin="0,4,0,12"
+                                   Text="O desinstalador terminou, mas isto ainda existe no disco/registro. Marque o que quer apagar; apagar não pode ser desfeito."/>
+                    </StackPanel>
+                    <WrapPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource LinkButton}" Content="Selecionar todos" Click="ResidueSelectAll_Click" Margin="0,0,16,0"/>
+                        <Button Style="{StaticResource BtnBase}" Content="Cancelar" Click="ResidueCancel_Click" Margin="0,0,8,0" IsCancel="True"/>
+                        <Button Style="{StaticResource BtnPrimary}" Content="Apagar selecionados" Click="ResidueOk_Click"/>
+                    </WrapPanel>
+                    <Border BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="4">
+                        <ListBox x:Name="ResidueList" BorderThickness="0" Padding="6" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding Checked, Mode=TwoWay}" Content="{Binding Label}" FontFamily="{StaticResource Mono}" FontSize="12" Margin="0,4"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </DockPanel>
             </Border>
         </Grid>
 

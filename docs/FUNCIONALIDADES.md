@@ -19,7 +19,7 @@ Otimizador para Windows 10 e 11, de uso da equipe de TI. É um único arquivo `R
   - o disco é HDD;
   - o disco está com alerta ou falha no SMART.
 
-## 2. Tela Ajustes
+## 2. Tela Otimização
 
 Escolha um nível ou marque item por item:
 
@@ -30,6 +30,13 @@ Escolha um nível ou marque item por item:
 | **Completo** | Tudo, inclusive itens avançados |
 
 Também há os botões **Marcar tudo**, **Desmarcar tudo** e **Marcar categoria**. Itens já aplicados aparecem apagados. Passando o mouse, aparece a chave e o valor atual.
+
+### Otimização (RAM)
+| Ajuste | Nível |
+|---|---|
+| Liberar RAM | sempre marcado, nos 3 níveis |
+
+Sempre a primeira opção da lista. Diferente dos outros itens, o rótulo não é "aplicado/pendente": é uma recomendação com base no uso atual da RAM — **Em dia** (até 30% em uso), **Moderado** (31–75%) ou **Recomendado** (acima de 75%). Esvazia as listas de memória em espera do Windows (standby, modificada e working sets) via `NtSetSystemInformation`; não mata nem altera nenhum processo.
 
 ### Privacidade
 | Ajuste | Nível |
@@ -88,6 +95,9 @@ Também há os botões **Marcar tudo**, **Desmarcar tudo** e **Marcar categoria*
 |---|---|
 | Otimização de Entrega só na rede local | Básico |
 | Limitar cache de DNS com falha | Básico |
+| Desativar proxy preso | Básico |
+| Remover variável de ambiente http_proxy teimosa | Básico |
+| Remover variável de ambiente https_proxy teimosa | Básico |
 | Remover limitação de rede durante multimídia | Completo |
 
 ### Interface
@@ -129,10 +139,29 @@ Também há os botões **Marcar tudo**, **Desmarcar tudo** e **Marcar categoria*
 
 Somente leitura. Mostra:
 - quantos ajustes já estão aplicados, no total e por categoria;
-- memória, espaço livre em disco e há quanto tempo o PC está ligado (sugere reiniciar após 7 dias);
+- memória (total e livre), espaço livre em disco e há quanto tempo o PC está ligado (sugere reiniciar após 7 dias);
 - especificações: SO, versão, nome, domínio, usuário logado, fabricante/modelo, número de série, processador, vídeo, RAM, disco, tipo de disco e saúde SMART.
 
-## 5. Tela Histórico e logs
+A ação de liberar RAM fica na tela Otimização (seção 2), junto com os outros itens, como a primeira opção da lista.
+
+## 5. Tela Inicialização
+
+Lista os programas que abrem no logon: `Run`/`RunOnce` do usuário e da máquina, e a pasta Inicializar (usuário e todos os usuários). Para cada item, mostra nome, origem, estado e comando completo, usando o mesmo flag que o Gerenciador de Tarefas do Windows usa (`StartupApproved`).
+
+- **Desabilitar** grava esse flag; o programa continua instalado e registrado, só não abre sozinho no próximo logon.
+- **Habilitar** reverte o mesmo flag. Totalmente reversível, a qualquer momento, na própria tela — não precisa de backup separado.
+- **Colunas**: redimensionáveis (arraste a borda do título) e ordenáveis (clique no título — Nome ordena alfabético, Estado mostra habilitados primeiro). A coluna Comando começa estreita; o botão Habilitar/Desabilitar fica sempre visível, sem precisar rolar a tela mesmo em janelas menores.
+
+## 6. Tela Desinstalar programas
+
+A mesma lista de "Aplicativos e recursos" do Windows (`...\CurrentVersion\Uninstall`, 64 bits + 32 bits + por usuário), com os mesmos filtros do Windows: sem nome ou marcado como componente do sistema não aparece.
+
+1. Selecione um programa na lista e clique em **Desinstalar selecionado**. Se nada estiver selecionado, ou se algo der errado, a mensagem aparece na própria tela (não só no log escondido).
+2. O Rogerin mostra o **comando exato** que vai rodar — o desinstalador do próprio programa, nunca um script. A string salva no registro é sempre separada em executável e argumentos pelo próprio Windows (`CommandLineToArgvW`), nunca por `cmd.exe` ou outro shell.
+3. Depois que o desinstalador termina, o Rogerin confere o **código de saída** (um código diferente de 0 é mostrado, mas não é tratado como falha automática — alguns instaladores usam 3010 para "reinício pendente", por exemplo).
+4. O Rogerin então procura o que sobrou: a mesma chave de registro e a mesma pasta de instalação que já eram conhecidas, **mais** uma varredura pelo nome **exato** da pasta do programa (nunca um texto parecido, nunca o nome do fabricante) em `%AppData%`, `%LocalAppData%`, `%LocalAppData%\Low`, `%ProgramData%` e em `Software` do registro (HKCU e HKLM). Cada resíduo encontrado aparece com sua própria caixinha marcada por padrão, mais um botão "Selecionar todos" — o técnico desmarca o que não quer apagar antes de confirmar. Apagar não pode ser desfeito.
+
+## 7. Tela Histórico e logs
 
 - Lista cada aplicação feita, com data, técnico e usuário.
 - **Desfazer** devolve os valores exatos de antes. Apps removidos e arquivos apagados não voltam.
@@ -143,9 +172,11 @@ Somente leitura. Mostra:
 | Backups | `C:\ProgramData\Rogerin\backups` |
 | Logs diários | `C:\ProgramData\Rogerin\logs` |
 
-## 6. Garantias de segurança
+## 8. Garantias de segurança
 
 - Não usa PowerShell, cmd nem scripts. As mudanças são feitas por APIs do Windows.
-- Só executa três ferramentas externas, todas do próprio Windows: `powercfg.exe`, `defrag.exe` e `cleanmgr.exe`.
-- Nunca libera nem renova IP, nem reseta a rede.
+- Só executa ferramentas externas do próprio Windows: `powercfg.exe`, `defrag.exe`, `cleanmgr.exe` e o desinstalador de cada programa (sempre via `CommandLineToArgvW`, nunca `cmd.exe`).
+- Nunca libera nem renova IP, nem reseta a rede. Os itens de Rede só tocam proxy (`ProxyEnable`, `http_proxy`/`https_proxy`).
+- Não limpa, desativa nem altera os logs de eventos do Windows.
 - A limpeza dos navegadores tem duas travas que impedem apagar senhas, favoritos, histórico ou cookies.
+- Desabilitar um item de inicialização nunca remove o programa; apagar resíduos de uma desinstalação sempre mostra o caminho exato antes de apagar.

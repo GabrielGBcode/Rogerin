@@ -246,6 +246,34 @@ namespace Rogerin.Core
 
         #endregion
 
+        #region Linha de comando
+
+        [DllImport("shell32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr CommandLineToArgvW(string cmdLine, out int numArgs);
+
+        [DllImport("kernel32.dll", EntryPoint = "LocalFree")]
+        static extern IntPtr LocalFree_CmdLine(IntPtr mem); // mesma função LocalFree de Energia; nome diferente só para clareza no uso
+
+        /// <summary>
+        /// Separa uma linha de comando (ex.: string de desinstalação do registro) em executável e argumentos
+        /// do mesmo jeito que o próprio Windows faz (CommandLineToArgvW), sem nenhum shell (cmd.exe) envolvido.
+        /// </summary>
+        public static string[] SplitCommandLine(string cmdLine)
+        {
+            var ptr = CommandLineToArgvW(cmdLine, out var argc);
+            if (ptr == IntPtr.Zero) throw new Win32Exception();
+            try
+            {
+                var args = new string[argc];
+                for (int i = 0; i < argc; i++)
+                    args[i] = Marshal.PtrToStringUni(Marshal.ReadIntPtr(ptr, i * IntPtr.Size));
+                return args;
+            }
+            finally { LocalFree_CmdLine(ptr); }
+        }
+
+        #endregion
+
         #region Windows Installer
 
         [DllImport("msi.dll", CharSet = CharSet.Unicode)]
@@ -308,6 +336,87 @@ namespace Rogerin.Core
 
         /// <summary>True se o produto (ProductCode) esta instalado nesta maquina.</summary>
         public static bool MsiInstalled(string productCode) => MsiQueryProductState(productCode) == 5; // INSTALLSTATE_DEFAULT
+
+        #endregion
+
+        #region Memória (liberar RAM)
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct LUID { public uint LowPart; public int HighPart; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct TOKEN_PRIVILEGES { public uint PrivilegeCount; public LUID Luid; public uint Attributes; }
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool LookupPrivilegeValue(string system, string name, out LUID luid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TOKEN_PRIVILEGES newState, uint bufferSize, IntPtr previousState, IntPtr returnLength);
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll")]
+        static extern bool CloseHandle(IntPtr handle);
+
+        const uint TOKEN_ADJUST_PRIVILEGES = 0x0020, TOKEN_QUERY = 0x0008, SE_PRIVILEGE_ENABLED = 0x0002;
+
+        /// <summary>Habilita um privilégio no token do próprio processo (ex.: SeProfileSingleProcessPrivilege). Falso se não concedido ao usuário.</summary>
+        static bool EnablePrivilege(string name)
+        {
+            if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out var token)) return false;
+            try
+            {
+                if (!LookupPrivilegeValue(null, name, out var luid)) return false;
+                var tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1, Luid = luid, Attributes = SE_PRIVILEGE_ENABLED };
+                return AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero) && Marshal.GetLastWin32Error() == 0;
+            }
+            finally { CloseHandle(token); }
+        }
+
+        [DllImport("ntdll.dll")]
+        static extern int NtSetSystemInformation(int infoClass, ref int info, int length);
+
+        const int SystemMemoryListInformation = 0x50;
+        // Comandos de MEMORY_LIST_COMMAND: 2 = esvaziar working sets, 3 = lista modificada, 4 = standby, 5 = standby de baixa prioridade.
+        static readonly int[] MemoryPurgeCommands = { 2, 3, 4, 5 };
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct MEMORYSTATUSEX
+        {
+            public uint Length;
+            public uint MemoryLoad;
+            public ulong TotalPhys, AvailPhys, TotalPageFile, AvailPageFile, TotalVirtual, AvailVirtual, AvailExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX status);
+
+        /// <summary>RAM física livre, em GB.</summary>
+        public static double AvailablePhysicalMemoryGB()
+        {
+            var s = new MEMORYSTATUSEX { Length = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX)) };
+            return GlobalMemoryStatusEx(ref s) ? s.AvailPhys / (double)(1L << 30) : 0;
+        }
+
+        /// <summary>
+        /// Esvazia as listas de memória em espera do Windows (standby/modified/working sets): processos que não
+        /// estão em uso liberam RAM de volta para o sistema. Não encerra nem altera nenhum processo.
+        /// Equivalente ao botão de liberar memória de otimizadores comerciais, só com API do Windows.
+        /// </summary>
+        public static void PurgeMemoryLists()
+        {
+            if (!EnablePrivilege("SeProfileSingleProcessPrivilege")) throw new Win32Exception("Privilégio SeProfileSingleProcessPrivilege não concedido a este usuário.");
+            foreach (var cmd in MemoryPurgeCommands)
+            {
+                var value = cmd;
+                var rc = NtSetSystemInformation(SystemMemoryListInformation, ref value, sizeof(int));
+                if (rc < 0) throw new Win32Exception(rc, $"NtSetSystemInformation(comando {cmd}) falhou (0x{rc:X8}).");
+            }
+        }
 
         #endregion
 

@@ -462,6 +462,41 @@
       "actions": [
         { "type": "appx", "package": "Microsoft.Copilot" }
       ]
+    },
+    {
+      "id": "net.proxy-off",
+      "name": "Desativar proxy preso",
+      "description": "ProxyEnable=0 nas Configurações da Internet do usuário. Corrige o navegador \"sem internet\" quando um proxy antigo ficou marcado. Não altera IP, DNS nem adaptador.",
+      "category": "Rede",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", "name": "ProxyEnable", "valueType": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "net.clear-stale-http-proxy-env",
+      "name": "Remover variável de ambiente http_proxy teimosa",
+      "description": "Apaga http_proxy do usuário e da máquina quando estiver presente. Alguns instaladores deixam essa variável gravada e ela passa a forçar proxy em apps de linha de comando e scripts. Não altera IP, DNS nem adaptador.",
+      "category": "Rede",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Environment", "name": "http_proxy", "valueType": "absent" },
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "name": "http_proxy", "valueType": "absent" }
+      ]
+    },
+    {
+      "id": "net.clear-stale-https-proxy-env",
+      "name": "Remover variável de ambiente https_proxy teimosa",
+      "description": "Igual ao item de http_proxy, para https_proxy. Não altera IP, DNS nem adaptador.",
+      "category": "Rede",
+      "risk": "safe",
+      "os": ["10", "11"],
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Environment", "name": "https_proxy", "valueType": "absent" },
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "name": "https_proxy", "valueType": "absent" }
+      ]
     }
   ]
 }

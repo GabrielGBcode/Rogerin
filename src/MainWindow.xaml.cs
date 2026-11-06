@@ -18,10 +18,15 @@ namespace Rogerin
         readonly Log _log = new Log();
         Engine _engine;
         Cleanup _cleanup;
+        StartupManager _startup;
+        UninstallManager _uninstall;
         readonly ObservableCollection<OptionItem> _items = new ObservableCollection<OptionItem>();
         ICollectionView _view;
         Func<Task> _pendingConfirm;
         bool _bulk; // evita que a selecao em massa desmarque o cartao de nivel
+        MemoryItem _memoryItem;
+        string _startupSortKey; bool _startupSortDesc;
+        List<ResidueRow> _residueRows;
 
         IEnumerable<TweakItem> Tweaks => _items.OfType<TweakItem>();
         IEnumerable<CleanupItem> Cleanups => _items.OfType<CleanupItem>();
@@ -37,6 +42,10 @@ namespace Rogerin
             }));
             SourceInitialized += (s, e) => Native.UseDarkTitleBar(new System.Windows.Interop.WindowInteropHelper(this).Handle);
             Loaded += async (s, e) => await InitAsync();
+            // Sem isto sobra uma faixa vazia à direita da tabela (o WPF reserva uma coluna extra invisível
+            // para preencher o espaço livre); em vez disso, uma coluna "elástica" ocupa esse espaço.
+            MakeColumnFillRemaining(StartupList, ColStartupCommand, new[] { ColStartupName, ColStartupSource, ColStartupState, ColStartupToggle }, 140);
+            MakeColumnFillRemaining(UninstallList, ColUninstallName, new[] { ColUninstallPublisher, ColUninstallVersion, ColUninstallSize }, 160);
         }
 
         async Task InitAsync()
@@ -47,6 +56,8 @@ namespace Rogerin
                 var (sys, user) = await Task.Run(() => (SystemInfo.Collect(), UserContext.Resolve()));
                 _engine = new Engine(catalog, sys, user, _log);
                 _cleanup = new Cleanup(user, sys);
+                _startup = new StartupManager(user);
+                _uninstall = new UninstallManager(user);
             });
             if (_engine == null) return;
 
@@ -60,6 +71,8 @@ namespace Rogerin
             MachineText.Text = $"{sys2.ComputerName} · {sys2.DomainLabel}";
             UserText.Text = _engine.User.Account;
 
+            _memoryItem = new MemoryItem();
+            Add(_memoryItem); // primeira opção, sempre marcada em qualquer nível
             foreach (var t in _engine.Catalog.Tweaks) Add(new TweakItem(t));
             foreach (var c in _cleanup.Targets()) Add(new CleanupItem(c));
             _view = CollectionViewSource.GetDefaultView(_items);
@@ -107,6 +120,9 @@ namespace Rogerin
                 BusyText.Text = "Medindo arquivos temporários…";
                 await Task.Run(() => { foreach (var c in Cleanups) _cleanup.Measure(c.Target); });
                 foreach (var c in Cleanups) c.Measured();
+
+                var ramFree = await Task.Run(() => Native.AvailablePhysicalMemoryGB());
+                _memoryItem.Measured(_engine.System.RamGB, ramFree);
             });
             UpdateLevelCounts();
             UpdateSelection();
@@ -173,10 +189,12 @@ namespace Rogerin
         {
             var t = Tweaks.Count(i => i.IsSelected);
             var c = Cleanups.Count(i => i.IsSelected);
+            var m = _memoryItem != null && _memoryItem.IsSelected ? 1 : 0;
             var parts = new List<string>();
+            if (m > 0) parts.Add("liberar RAM");
             if (t > 0) parts.Add(t == 1 ? "1 ajuste" : $"{t} ajustes");
             if (c > 0) parts.Add(c == 1 ? "1 limpeza" : $"{c} limpezas");
-            SelectionText.Text = parts.Count == 0 ? "Nada selecionado" : string.Join(" e ", parts) + (t + c == 1 ? " selecionado" : " selecionados");
+            SelectionText.Text = parts.Count == 0 ? "Nada selecionado" : string.Join(" e ", parts) + (t + c + m == 1 ? " selecionado" : " selecionados");
 
             var bytes = Cleanups.Where(i => i.IsSelected).Sum(i => i.Target.Bytes);
             var reboot = Tweaks.Any(i => i.IsSelected && i.RebootRequired);
@@ -184,7 +202,7 @@ namespace Rogerin
             if (bytes > 0) hints.Add("libera cerca de " + new CleanupTarget { Bytes = bytes }.SizeLabel);
             if (reboot) hints.Add("algum item requer reinício");
             if (hints.Count > 0) StatusLine.Text = char.ToUpper(hints[0][0]) + string.Join(" · ", hints).Substring(1);
-            ApplyButton.IsEnabled = t + c > 0;
+            ApplyButton.IsEnabled = t + c + m > 0;
         }
 
         #endregion
@@ -195,10 +213,12 @@ namespace Rogerin
         {
             var tweaks = Tweaks.Where(i => i.IsSelected).Select(i => i.Tweak).ToList();
             var cleans = Cleanups.Where(i => i.IsSelected).ToList();
-            if (tweaks.Count + cleans.Count == 0) return;
+            var boostRam = _memoryItem.IsSelected;
+            if (tweaks.Count + cleans.Count == 0 && !boostRam) return;
 
             var lines = new List<string>();
             await Busy("Simulando…", async () => lines = await Task.Run(() => _engine.Preview(tweaks).ToList()));
+            if (boostRam) lines.Insert(0, "Liberar RAM: esvaziar as listas de memória em espera do Windows (não mexe em nenhum processo).");
             foreach (var c in cleans)
                 lines.Add(c.Target.IsDnsCache ? "Limpeza: esvaziar cache DNS (o IP e a conexão não mudam)"
                     : c.Target.IsDiskCleanup ? $"Limpeza: rodar a Limpeza de Disco do Windows em {c.Target.Path} com todas as opções (inclui Limpeza do Windows Update e esvaziar a Lixeira; pasta Downloads fica)."
@@ -214,42 +234,63 @@ namespace Rogerin
             var intro = $"{lines.Count} alterações. Antes de cada ajuste o valor atual é salvo para desfazer" +
                         (restore ? ", e um ponto de restauração é criado." : ".") +
                         (cleans.Any(c => !c.Target.OnDemand || c.Target.IsDiskCleanup) ? " Arquivos apagados não voltam." : "");
-            ShowConfirm("Confirmar otimização", intro, lines, "Aplicar agora", () => ApplyAsync(tweaks, cleans, restore));
+            ShowConfirm("Confirmar otimização", intro, lines, "Aplicar agora", () => ApplyAsync(tweaks, cleans, restore, boostRam));
         }
 
-        async Task ApplyAsync(List<Tweak> tweaks, List<CleanupItem> cleans, bool restore)
+        async Task ApplyAsync(List<Tweak> tweaks, List<CleanupItem> cleans, bool restore, bool boostRam)
         {
             await Busy("Aplicando…", async () =>
             {
-                var progress = new Progress<string>(m => BusyText.Text = m);
+                // A barra cobre a aplicação inteira: RAM (1 etapa) + ajustes (1 etapa) + cada limpeza (1 etapa cada),
+                // não só a limpeza no final.
+                int totalSteps = (boostRam ? 1 : 0) + (tweaks.Count > 0 ? 1 : 0) + cleans.Count;
+                int doneSteps = 0;
+                CleanupTitle.Text = "Aplicando otimização…";
+                CleanupBar.Value = 0;
+                CleanupPercent.Text = "0%";
+                CleanupOverlay.Visibility = totalSteps > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+                void ShowStep(double fraction, string label)
+                {
+                    var total = totalSteps > 0 ? (doneSteps + fraction) / totalSteps : 1;
+                    CleanupBar.Value = total;
+                    CleanupPercent.Text = $"{(int)(total * 100)}%";
+                    CleanupStep.Text = $"Etapa {Math.Min(doneSteps + 1, totalSteps)} de {totalSteps}";
+                    CleanupItemText.Text = label;
+                    BusyText.Text = $"{label} {(int)(total * 100)}%";
+                }
+
+                var progress = new Progress<string>(m => { BusyText.Text = m; CleanupItemText.Text = m; });
+
+                if (boostRam)
+                {
+                    ShowStep(0, "Liberando memória…");
+                    var result = await Task.Run(() => MemoryBoost.Run());
+                    _log.Write(result.FreedGB > 0.05
+                        ? $"RAM liberada: {result.BeforeFreeGB:0.#} GB → {result.AfterFreeGB:0.#} GB livres (+{result.FreedGB:0.#} GB)."
+                        : $"RAM liberada: {result.AfterFreeGB:0.#} GB livres.");
+                    doneSteps++;
+                    ShowStep(0, "RAM liberada.");
+                }
                 if (tweaks.Count > 0)
                 {
+                    ShowStep(0, $"Aplicando {tweaks.Count} ajuste(s)…");
                     var results = await Task.Run(() => _engine.Apply(tweaks, restore, progress));
                     var reboot = results.Any(r => r.Tweak.RebootRequired && r.Status == TweakStatus.Applied);
                     _log.Write($"Ajustes: {results.Count(r => r.Status == TweakStatus.Applied)} de {results.Count} aplicados." +
                                (reboot ? " Reinicie o computador para concluir." : " Alguns itens valem após sair e entrar de novo na conta."));
+                    doneSteps++;
+                    ShowStep(0, "Ajustes aplicados.");
                 }
+
                 long freed = 0;
-                // Barra geral da limpeza: cada item vale uma parte igual; itens com arquivos avançam arquivo a arquivo.
-                CleanupBar.Value = 0;
-                CleanupPercent.Text = "0%";
-                CleanupOverlay.Visibility = cleans.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 for (int i = 0; i < cleans.Count; i++)
                 {
                     var c = cleans[i];
-                    var step = i;
                     var label = c.Target.IsDiskCleanup ? "Limpeza de Disco do Windows em andamento (pode levar vários minutos)"
                         : c.Target.IsBrowser && c.Target.Running ? $"Fechando o {c.Target.BrowserName} e limpando"
                         : "Limpando: " + c.Name;
-                    void Show(double fraction)
-                    {
-                        var total = (step + fraction) / cleans.Count;
-                        CleanupBar.Value = total;
-                        CleanupPercent.Text = $"{(int)(total * 100)}%";
-                        CleanupStep.Text = $"Item {step + 1} de {cleans.Count}";
-                        CleanupItemText.Text = label + "…";
-                        BusyText.Text = $"{label}… {(int)(total * 100)}%";
-                    }
+                    void Show(double fraction) => ShowStep(fraction, label + "…");
                     Show(0);
                     var itemProgress = new Progress<double>(Show);
                     try
@@ -262,7 +303,8 @@ namespace Rogerin
                             : $"Limpeza: {c.Name} liberou {new CleanupTarget { Bytes = f }.SizeLabel}.");
                     }
                     catch (Exception ex) { _log.Write($"Limpeza: {c.Name}: {ex.Message}"); }
-                    Show(1);
+                    doneSteps++;
+                    Show(0);
                 }
                 CleanupOverlay.Visibility = Visibility.Collapsed;
                 if (cleans.Any(c => !c.Target.OnDemand || c.Target.IsDiskCleanup)) _log.Write($"Limpeza concluída: {new CleanupTarget { Bytes = freed }.SizeLabel} liberados.");
@@ -271,6 +313,18 @@ namespace Rogerin
             LoadHistory();
             ClearLevel();
             SetSelection(i => false);
+        }
+
+        /// <summary>Botão "Executar" do item Liberar RAM: ação isolada, sem ponto de restauração e sem confirmação.</summary>
+        async void RunMemoryBoost_Click(object sender, RoutedEventArgs e)
+        {
+            MemoryBoostResult result = default;
+            await Busy("Liberando memória…", async () => result = await Task.Run(() => MemoryBoost.Run()));
+            _log.Write(result.FreedGB > 0.05
+                ? $"RAM liberada: {result.BeforeFreeGB:0.#} GB → {result.AfterFreeGB:0.#} GB livres (+{result.FreedGB:0.#} GB)."
+                : $"RAM liberada: {result.AfterFreeGB:0.#} GB livres.");
+            _memoryItem.Measured(_engine.System.RamGB, Native.AvailablePhysicalMemoryGB());
+            RenderComputer();
         }
 
         #endregion
@@ -315,6 +369,8 @@ namespace Rogerin
 
             RamText.Text = $"{sys.RamGB:0.#} GB";
             CpuText.Text = $"{sys.Cores} núcleos · {sys.Threads} threads";
+            try { RamFreeText.Text = $"{Native.AvailablePhysicalMemoryGB():0.#} GB livres"; }
+            catch (Exception) { RamFreeText.Text = ""; }
             DiskText.Text = $"{sys.DiskFreeGB:0} GB";
             DiskBar.Value = sys.DiskTotalGB > 0 ? 100 * (sys.DiskTotalGB - sys.DiskFreeGB) / sys.DiskTotalGB : 0;
             DiskSub.Text = $"de {sys.DiskTotalGB:0} GB em {sys.SystemDrive}" + (sys.DiskMedia != null ? $" · {sys.DiskMedia}" : "");
@@ -344,6 +400,157 @@ namespace Rogerin
                 Text = $"{g.Count(x => x.Report.Status == TweakStatus.Applied)} de {g.Count()} aplicados",
                 Ratio = g.Count(x => x.Report.Status == TweakStatus.Applied) / (double)g.Count()
             }).ToList();
+        }
+
+        #endregion
+
+        #region Inicialização
+
+        List<StartupRow> _startupRows;
+        bool _startupHeaderHandlerAttached;
+
+        void LoadStartup()
+        {
+            StartupStatusText.Text = "";
+            _startupRows = _startup.List().Select(x => new StartupRow(x)).ToList();
+            StartupList.ItemsSource = _startupRows;
+            if (!_startupHeaderHandlerAttached)
+            {
+                // Um único handler no ListView, pelo texto do cabeçalho: evita trocar o estilo padrão do
+                // cabeçalho (que é o que dá o "arrastar a borda para redimensionar" de fábrica do WPF).
+                StartupList.AddHandler(GridViewColumnHeader.ClickEvent, new RoutedEventHandler(StartupHeader_Click));
+                _startupHeaderHandlerAttached = true;
+            }
+        }
+
+        void StartupHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if (_startupRows == null || !(e.OriginalSource is GridViewColumnHeader header) || !(header.Content is string key) || string.IsNullOrEmpty(key)) return;
+            _startupSortDesc = _startupSortKey == key && !_startupSortDesc;
+            _startupSortKey = key;
+            IEnumerable<StartupRow> sorted = key == "Estado" ? _startupRows.OrderBy(r => r.Entry.Enabled ? 0 : 1) // habilitado primeiro
+                : key == "Nome" ? _startupRows.OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase)
+                : key == "Origem" ? _startupRows.OrderBy(r => r.Source, StringComparer.CurrentCultureIgnoreCase)
+                : _startupRows.OrderBy(r => r.Command, StringComparer.CurrentCultureIgnoreCase);
+            if (_startupSortDesc) sorted = sorted.Reverse();
+            StartupList.ItemsSource = sorted.ToList();
+        }
+
+        void ToggleStartup_Click(object sender, RoutedEventArgs e)
+        {
+            var row = (StartupRow)((FrameworkElement)sender).DataContext;
+            try
+            {
+                _startup.Toggle(row.Entry);
+                row.Refresh();
+                StartupStatusText.Text = $"{row.Name} → {row.StatusText}.";
+                _log.Write($"Inicialização: {row.Name} → {row.StatusText}.");
+            }
+            catch (Exception ex)
+            {
+                StartupStatusText.Text = $"Não foi possível alterar {row.Name}: {ex.Message}";
+                _log.Write($"Inicialização: {row.Name}: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Desinstalar
+
+        void LoadUninstall()
+        {
+            UninstallStatusText.Text = "";
+            UninstallList.ItemsSource = _uninstall.List().Select(x => new UninstallRow(x)).ToList();
+        }
+
+        void Uninstall_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(UninstallList.SelectedItem is UninstallRow row))
+            {
+                UninstallStatusText.Text = "Selecione um programa na lista para desinstalar.";
+                return;
+            }
+            var app = row.App;
+            string[] parts;
+            try { parts = Native.SplitCommandLine(Environment.ExpandEnvironmentVariables(app.UninstallCommand)); }
+            catch (Exception ex) { UninstallStatusText.Text = $"Desinstalar {app.DisplayName}: comando inválido ({ex.Message})."; return; }
+            var lines = new List<string> { string.Join(" ", parts.Select(p => p.Contains(' ') ? $"\"{p}\"" : p)) };
+            ShowConfirm("Desinstalar " + app.DisplayName, "Este é o comando exato que será executado, igual ao que \"Aplicativos e recursos\" roda. Pode abrir uma janela própria do instalador.",
+                lines, "Desinstalar", () => DoUninstall(app));
+        }
+
+        async Task DoUninstall(InstalledApp app)
+        {
+            bool ok = true;
+            await Busy("Desinstalando " + app.DisplayName + "…", async () =>
+            {
+                try
+                {
+                    var code = await Task.Run(() => _uninstall.Uninstall(app));
+                    if (UninstallManager.ExitCodeOk(code))
+                    {
+                        UninstallStatusText.Text = $"{app.DisplayName}: desinstalador concluído.";
+                        _log.Write($"{app.DisplayName}: desinstalador concluído (código {code}).");
+                    }
+                    else
+                    {
+                        // Nao trata como erro fatal: alguns desinstaladores retornam codigo != 0 por motivo
+                        // benigno (ex.: usuario cancelou). O residuo abaixo mostra se algo realmente ficou.
+                        UninstallStatusText.Text = $"{app.DisplayName}: o desinstalador terminou com código {code} (pode indicar que foi cancelado ou falhou). Confira o que sobrou abaixo.";
+                        _log.Write($"{app.DisplayName}: desinstalador terminou com código {code}.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    UninstallStatusText.Text = $"Desinstalar {app.DisplayName}: {ex.Message}";
+                    _log.Write($"Desinstalar {app.DisplayName}: {ex.Message}");
+                }
+            });
+            if (ok)
+            {
+                var residue = await Task.Run(() => _uninstall.CheckResidue(app));
+                if (residue.Count > 0) ShowResidue(app.DisplayName, residue);
+            }
+            LoadUninstall();
+        }
+
+        void ShowResidue(string appName, List<ResidueCandidate> candidates)
+        {
+            _residueRows = candidates.Select(c => new ResidueRow(c)).ToList();
+            ResidueTitle.Text = "Limpar resíduos de " + appName;
+            ResidueList.ItemsSource = _residueRows;
+            ResidueOverlay.Visibility = Visibility.Visible;
+        }
+
+        void ResidueSelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (_residueRows == null) return;
+            var selectAll = _residueRows.Any(r => !r.Checked);
+            foreach (var r in _residueRows) r.Checked = selectAll;
+        }
+
+        void ResidueCancel_Click(object sender, RoutedEventArgs e) => ResidueOverlay.Visibility = Visibility.Collapsed;
+
+        async void ResidueOk_Click(object sender, RoutedEventArgs e)
+        {
+            ResidueOverlay.Visibility = Visibility.Collapsed;
+            var chosen = _residueRows.Where(r => r.Checked).Select(r => r.Candidate).ToList();
+            if (chosen.Count == 0) return;
+            await Busy("Apagando resíduos…", async () =>
+            {
+                try
+                {
+                    await Task.Run(() => _uninstall.CleanResidue(chosen));
+                    UninstallStatusText.Text = $"{chosen.Count} resíduo(s) apagado(s).";
+                    _log.Write($"Resíduos apagados: {chosen.Count}.");
+                }
+                catch (Exception ex)
+                {
+                    UninstallStatusText.Text = "Falha ao apagar resíduos: " + ex.Message;
+                    _log.Write("Falha ao apagar resíduos: " + ex.Message);
+                }
+            });
         }
 
         #endregion
@@ -387,13 +594,37 @@ namespace Rogerin
 
         #region Infra
 
+        /// <summary>
+        /// Faz <paramref name="flexColumn"/> ocupar sempre o resto da largura da lista: sem isto, o WPF
+        /// deixa uma faixa vazia depois da última coluna quando a janela é mais larga que a soma das colunas.
+        /// Reage a redimensionar a janela e a redimensionar qualquer uma das outras colunas na mão.
+        /// </summary>
+        void MakeColumnFillRemaining(ListView list, GridViewColumn flexColumn, GridViewColumn[] others, double minWidth)
+        {
+            void Resize()
+            {
+                var used = others.Sum(c => c.Width) + 24; // folga para a barra de rolagem/bordas
+                var available = list.ActualWidth - used;
+                flexColumn.Width = available > minWidth ? available : minWidth;
+            }
+            list.SizeChanged += (s, e) => Resize();
+            foreach (var c in others)
+                ((INotifyPropertyChanged)c).PropertyChanged += (s, e) => { if (e.PropertyName == "Width") Resize(); };
+            list.Loaded += (s, e) => Resize();
+        }
+
         void Nav_Checked(object sender, RoutedEventArgs e)
         {
             if (PageTweaks == null) return;
             PageTweaks.Visibility = NavTweaks.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             PageComputer.Visibility = NavComputer.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            PageStartup.Visibility = NavStartup.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            PageUninstall.Visibility = NavUninstall.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             PageHistory.Visibility = NavHistory.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-            if (NavHistory.IsChecked == true && _engine != null) LoadHistory();
+            if (_engine == null) return;
+            if (NavHistory.IsChecked == true) LoadHistory();
+            if (NavStartup.IsChecked == true) LoadStartup();
+            if (NavUninstall.IsChecked == true) LoadUninstall();
         }
 
         void ShowConfirm(string title, string intro, IList<string> lines, string okText, Func<Task> onOk)

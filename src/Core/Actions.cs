@@ -52,7 +52,8 @@ namespace Rogerin.Core
             switch (a.Type)
             {
                 case "registry":
-                    WriteRegistry(a.Path, a.Name, a.Value, ParseKind(a.ValueType));
+                    if (a.ValueType == "absent") DeleteValue(a.Path, a.Name);
+                    else WriteRegistry(a.Path, a.Name, a.Value, ParseKind(a.ValueType));
                     break;
                 case "service":
                     Native.SetServiceStart(a.Name, StartCode(a.StartType), false);
@@ -135,9 +136,11 @@ namespace Rogerin.Core
                 var name = ValueName(a.Name);
                 var exists = key != null && key.GetValueNames().Contains(name, StringComparer.OrdinalIgnoreCase);
                 var value = exists ? key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) : null;
+                var absent = a.ValueType == "absent";
                 var st = new ActionState
                 {
-                    Status = exists && Same(value, a.Value) ? ActionStatus.Applied : ActionStatus.NotApplied,
+                    Status = absent ? (exists ? ActionStatus.NotApplied : ActionStatus.Applied)
+                                     : (exists && Same(value, a.Value) ? ActionStatus.Applied : ActionStatus.NotApplied),
                     Current = exists ? Convert.ToString(value) : "(ausente)"
                 };
                 st.Snapshot["keyExists"] = key != null;
