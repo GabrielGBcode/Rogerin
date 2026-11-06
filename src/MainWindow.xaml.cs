@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Rogerin.Core;
 
 namespace Rogerin
@@ -46,7 +48,53 @@ namespace Rogerin
             // para preencher o espaço livre); em vez disso, uma coluna "elástica" ocupa esse espaço.
             MakeColumnFillRemaining(StartupList, ColStartupCommand, new[] { ColStartupName, ColStartupSource, ColStartupState, ColStartupToggle }, 140);
             MakeColumnFillRemaining(UninstallList, ColUninstallName, new[] { ColUninstallPublisher, ColUninstallVersion, ColUninstallSize }, 160);
+
+            CleanupBar.ValueChanged += (s, e) => MoveDog(snap: e.NewValue < e.OldValue);
+            DogLane.SizeChanged += (s, e) => MoveDog(snap: true);
+            DogLane.IsVisibleChanged += (s, e) => RunDog((bool)e.NewValue);
         }
+
+        #region Cachorro da barra de progresso
+
+        /// <summary>Galope: pernas cruzadas em fase oposta, rabo abanando e o corpo subindo e descendo.</summary>
+        void RunDog(bool on)
+        {
+            void Loop(Animatable target, DependencyProperty property, double from, double to, int ms) =>
+                target.BeginAnimation(property, on
+                    ? new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(ms))
+                    {
+                        AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever,
+                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+                    }
+                    : null);
+            Loop(LegNearBack, RotateTransform.AngleProperty, 25, -25, 180);
+            Loop(LegFarFront, RotateTransform.AngleProperty, 25, -25, 180);
+            Loop(LegNearFront, RotateTransform.AngleProperty, -25, 25, 180);
+            Loop(LegFarBack, RotateTransform.AngleProperty, -25, 25, 180);
+            Loop(DogTail, RotateTransform.AngleProperty, -12, 10, 180);
+            Loop(DogBob, TranslateTransform.YProperty, 0, -1.2, 90);
+            if (on) MoveDog(snap: true);
+        }
+
+        /// <summary>Leva o focinho do cachorro até a ponta da parte preenchida da barra.</summary>
+        void MoveDog(bool snap)
+        {
+            var lane = DogLane.ActualWidth;
+            if (lane <= 0) return;
+            var x = Math.Max(0, Math.Min(lane - DogView.Width, lane * CleanupBar.Value - DogView.Width * 0.97));
+            if (snap)
+            {
+                DogView.BeginAnimation(Canvas.LeftProperty, null);
+                Canvas.SetLeft(DogView, x);
+                return;
+            }
+            DogView.BeginAnimation(Canvas.LeftProperty, new DoubleAnimation(x, TimeSpan.FromMilliseconds(400))
+            {
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            });
+        }
+
+        #endregion
 
         async Task InitAsync()
         {

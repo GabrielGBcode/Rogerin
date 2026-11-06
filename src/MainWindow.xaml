@@ -360,7 +360,68 @@
                             <TextBlock x:Name="CleanupStep" Style="{StaticResource Body}" FontSize="12" Margin="0,2,0,0"/>
                         </StackPanel>
                     </DockPanel>
-                    <ProgressBar x:Name="CleanupBar" Height="10" Margin="0,16,0,10" Maximum="1"
+                    <!-- Border collie (como o do ícone) correndo em cima da barra, acompanhando o progresso -->
+                    <Canvas x:Name="DogLane" Height="36" Margin="0,12,0,0" ClipToBounds="False" IsHitTestVisible="False">
+                        <Viewbox x:Name="DogView" Width="58" Height="36" Canvas.Left="0" Canvas.Top="1">
+                            <Viewbox.Effect>
+                                <DropShadowEffect Color="#3CC2B9" ShadowDepth="0" BlurRadius="6" Opacity="0.55"/>
+                            </Viewbox.Effect>
+                            <Canvas Width="64" Height="40">
+                                <Canvas.RenderTransform><TranslateTransform x:Name="DogBob"/></Canvas.RenderTransform>
+                                <!-- pernas do lado de lá -->
+                                <Canvas>
+                                    <Canvas.RenderTransform><RotateTransform x:Name="LegFarBack" Angle="-25" CenterX="18" CenterY="21"/></Canvas.RenderTransform>
+                                    <Path Fill="#26292C" Data="M15,19 L21,19 L20,30 L18.5,36.5 L15.5,36.5 L16.5,30 Z"/>
+                                    <Path Fill="#C9C9C9" Data="M15.6,34.6 L18.9,34.6 L18.5,37 L15,37 Z"/>
+                                </Canvas>
+                                <Canvas>
+                                    <Canvas.RenderTransform><RotateTransform x:Name="LegFarFront" Angle="25" CenterX="40" CenterY="21"/></Canvas.RenderTransform>
+                                    <Path Fill="#26292C" Data="M37.5,19 L42,19 L41.2,36.5 L38,36.5 Z"/>
+                                    <Path Fill="#C9C9C9" Data="M38,34.6 L41.3,34.6 L41.3,37 L37.6,37 Z"/>
+                                </Canvas>
+                                <!-- rabo -->
+                                <Canvas>
+                                    <Canvas.RenderTransform><RotateTransform x:Name="DogTail" CenterX="13" CenterY="16"/></Canvas.RenderTransform>
+                                    <Path Fill="#0D0D0D" Data="M14,15 C8,15.5 4,12.5 1.5,6.5 C4.5,8 7,9 9,9.2 C11,9.8 12.5,11 14,12 Z"/>
+                                    <Path Fill="#F4F4F4" Data="M1.5,6.5 C3,7.3 4.5,8 6,8.6 C5,9.6 3.5,9.4 2.6,8.6 Z"/>
+                                </Canvas>
+                                <!-- corpo e barriga -->
+                                <Path Fill="#0D0D0D" Data="M12,15 C14,11 26,10.5 34,11 C40,11 44,13 45,17 C45.5,22 43,25 38,25.5 C30,26.2 20,26.2 15,24.5 C11,23 10.5,18 12,15 Z"/>
+                                <Path Fill="#F4F4F4" Data="M24,25.8 C28,24.6 34,24.4 38,25.4 C33,26.3 28,26.3 24,25.8 Z"/>
+                                <!-- pernas do lado de cá -->
+                                <Canvas>
+                                    <Canvas.RenderTransform><RotateTransform x:Name="LegNearBack" Angle="25" CenterX="18" CenterY="20"/></Canvas.RenderTransform>
+                                    <Path Fill="#0D0D0D" Data="M14.5,18 L21.5,18 L20.5,29 L19,36 L15.5,36 L16.5,29 Z"/>
+                                    <Path Fill="#F4F4F4" Data="M16.1,33 L19.4,33 L19,37 L14.6,37 Z"/>
+                                </Canvas>
+                                <Canvas>
+                                    <Canvas.RenderTransform><RotateTransform x:Name="LegNearFront" Angle="-25" CenterX="41" CenterY="20"/></Canvas.RenderTransform>
+                                    <Path Fill="#F4F4F4" Data="M38.5,18 L43.5,18 L42.4,36 L39,36 Z"/>
+                                    <Path Fill="#0D0D0D" Data="M38.5,18 L43.5,18 L43,26 L38.9,26 Z"/>
+                                </Canvas>
+                                <!-- cabeça, colar de pelo branco e orelha -->
+                                <Path Fill="#0D0D0D" Data="M37,17 C36.5,10 40,4.5 46.5,4 C52,3.6 55,5.6 57,8.3 L61.5,9.8 C62.6,10.8 62.1,12.8 60.6,13.1 L55,14.2 C52,16 48,18 44,19.5 Z"/>
+                                <Path Fill="#F4F4F4" Data="M40.5,7.5 C43,10 45,13.5 45.5,18 C45.8,21.5 44.5,24.5 41.5,25.8 C42,22.5 41.5,20 40.2,18.6 C41.5,18 42,16.5 41.2,14.5 C40.5,12 40,10 40.5,7.5 Z"/>
+                                <Path Fill="#0D0D0D" Data="M44.5,5 L43.6,-0.2 L49,3.8 Z"/>
+                                <Path Fill="#C98A4B" Data="M45.1,4.1 L44.7,1.4 L47.4,3.5 Z"/>
+                                <!-- focinho branco, boca aberta e língua -->
+                                <Path Fill="#F4F4F4" Data="M49.8,3.8 C50.6,3.7 51.4,3.9 52,4.3 C52.4,6 53.8,7.3 56,8.3 L61.5,9.8 C62.6,10.8 62.1,12.8 60.6,13.1 L55.4,13.8 C53.5,11.2 51.5,8.5 49.8,3.8 Z"/>
+                                <Path Fill="#7A1B1B" Data="M55.4,13.8 L60.6,13.1 C60.1,15.1 58,16.3 56,15.9 Z"/>
+                                <Path Fill="#E86A7A" Data="M56.6,14.8 C57.6,14.6 58.6,14.7 59.1,15.2 C58.7,17.7 57.1,18.4 56.4,17.2 Z"/>
+                                <Path Fill="White" Data="M59.4,13.25 L60.1,13.15 L59.8,14.2 Z"/>
+                                <Path Fill="Black"><Path.Data><EllipseGeometry Center="61.4,10.7" RadiusX="1.05" RadiusY="1.05"/></Path.Data></Path>
+                                <!-- sobrancelha caramelo e olho verde -->
+                                <Path Fill="#C98A4B"><Path.Data><EllipseGeometry Center="50,6.2" RadiusX="1.3" RadiusY="0.75"/></Path.Data></Path>
+                                <Path Fill="#3FAE5A"><Path.Data><EllipseGeometry Center="50.5,8" RadiusX="1.1" RadiusY="1.1"/></Path.Data></Path>
+                                <Path Fill="#0D0D0D"><Path.Data><EllipseGeometry Center="50.5,8" RadiusX="0.5" RadiusY="0.5"/></Path.Data></Path>
+                                <Path Fill="White"><Path.Data><EllipseGeometry Center="50.85,7.7" RadiusX="0.3" RadiusY="0.3"/></Path.Data></Path>
+                                <!-- coleira -->
+                                <Path Fill="#2F3337" Data="M41.3,6.6 C43.4,9.8 44.8,13.5 45.2,17.4 L43,17.9 C42.5,14.2 41.3,10.8 39.6,8 Z"/>
+                                <Path Stroke="#C0C0C0" StrokeThickness="0.6"><Path.Data><EllipseGeometry Center="44.3,18.4" RadiusX="1" RadiusY="1"/></Path.Data></Path>
+                            </Canvas>
+                        </Viewbox>
+                    </Canvas>
+                    <ProgressBar x:Name="CleanupBar" Height="10" Margin="0,0,0,10" Maximum="1"
                                  Foreground="{StaticResource Accent}" Background="{StaticResource NaBg}" BorderThickness="0"/>
                     <TextBlock x:Name="CleanupItemText" Style="{StaticResource Body}" FontSize="13" TextWrapping="Wrap"/>
                 </StackPanel>
