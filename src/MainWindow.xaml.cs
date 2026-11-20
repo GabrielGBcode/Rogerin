@@ -665,6 +665,7 @@ namespace Rogerin
         {
             if (PageTweaks == null) return;
             PageTweaks.Visibility = NavTweaks.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            PageUtilities.Visibility = NavUtilities.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             PageComputer.Visibility = NavComputer.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             PageStartup.Visibility = NavStartup.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             PageUninstall.Visibility = NavUninstall.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
@@ -674,6 +675,34 @@ namespace Rogerin
             if (NavStartup.IsChecked == true) LoadStartup();
             if (NavUninstall.IsChecked == true) LoadUninstall();
         }
+
+        #region Utilidades: Rogerin-RAM
+
+        void RunRam_Click(object sender, RoutedEventArgs e)
+        {
+            ShowConfirm("Instalar Rogerin-RAM",
+                "O Rogerin vai baixar o instalador oficial e abri-lo. Ele instala o serviço e pede permissão de administrador.",
+                new[] { "Baixar de: " + RamInstaller.Url, "Abrir: " + RamInstaller.FileName },
+                "Baixar e abrir",
+                async () =>
+                {
+                    try
+                    {
+                        RamStatus.Text = "Baixando o instalador…";
+                        var caminho = await RamInstaller.DownloadAsync();
+                        RamInstaller.Open(caminho);
+                        RamStatus.Text = "Instalador aberto. Conclua a instalação na janela que abriu.";
+                        _log.Write("Utilidades: instalador do Rogerin-RAM baixado e aberto.");
+                    }
+                    catch (Exception ex)
+                    {
+                        RamStatus.Text = "Não foi possível baixar o instalador: " + ex.Message;
+                        _log.Write("Utilidades: falha ao baixar o Rogerin-RAM: " + ex.Message);
+                    }
+                });
+        }
+
+        #endregion
 
         void ShowConfirm(string title, string intro, IList<string> lines, string okText, Func<Task> onOk)
         {

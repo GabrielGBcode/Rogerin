@@ -26,6 +26,7 @@
                 <RadioButton x:Name="NavComputer" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Computador"/>
                 <RadioButton x:Name="NavStartup" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Inicialização"/>
                 <RadioButton x:Name="NavUninstall" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Desinstalar programas"/>
+                <RadioButton x:Name="NavUtilities" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Utilidades"/>
                 <RadioButton x:Name="NavHistory" Style="{StaticResource Nav}" GroupName="nav" Checked="Nav_Checked" Content="Histórico e logs"/>
             </StackPanel>
         </DockPanel>
@@ -310,6 +311,27 @@
                 </Border>
             </Grid>
 
+
+            <!-- ============ UTILIDADES ============ -->
+            <ScrollViewer x:Name="PageUtilities" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel Margin="24,20">
+                    <TextBlock Style="{StaticResource H1}" Text="Utilidades"/>
+                    <TextBlock Style="{StaticResource Body}" Margin="0,4,0,14"
+                               Text="Ferramentas prontas do Rogerin. Clique em Executar para ver o que será feito antes de confirmar."/>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Rogerin-RAM" FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock Style="{StaticResource Body}" Margin="0,3,0,0"
+                                       Text="Libera a RAM automaticamente ao atingir 90% de uso, sem fechar aplicativos. Baixa o instalador oficial e o abre."/>
+                            <DockPanel Margin="0,14,0,0">
+                                <Button DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Executar"
+                                        Padding="24,9" Click="RunRam_Click"/>
+                                <TextBlock x:Name="RamStatus" Style="{StaticResource Body}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
 
             <!-- ============ HISTÓRICO E LOGS ============ -->
             <Grid x:Name="PageHistory" Grid.Row="1" Visibility="Collapsed" Margin="24,20,24,16">
