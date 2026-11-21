@@ -1,6 +1,12 @@
 # Rogerin
 
-[![Baixar Rogerin v2.3.0](https://img.shields.io/badge/Baixar-Rogerin%20v2.3.0-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/GabrielGBcode/Rogerin/releases/latest/download/Rogerin.exe)
+<p align="center">
+  <a href="https://github.com/GabrielGBcode/Rogerin/releases/latest/download/Rogerin.exe">
+    <img src="https://img.shields.io/github/v/release/GabrielGBcode/Rogerin?label=BAIXAR%20ROGERIN&color=0078D4&labelColor=005A9E&style=for-the-badge&logo=windows&logoColor=white" height="64" alt="Baixar o Rogerin para Windows">
+  </a>
+</p>
+
+<p align="center"><b>Clique para baixar o <code>Rogerin.exe</code></b></p>
 
 Baixe o `Rogerin.exe` já compilado e execute. Não precisa clonar nem compilar. O Windows pode mostrar um aviso de "editor desconhecido" (SmartScreen), porque o arquivo não é assinado digitalmente.
 
