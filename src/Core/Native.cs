@@ -11,6 +11,22 @@ namespace Rogerin.Core
         [DllImport("kernel32.dll")]
         public static extern ulong GetTickCount64();
 
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetCurrentThread();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool SetThreadPriority(IntPtr thread, int priority);
+
+        const int THREAD_MODE_BACKGROUND_BEGIN = 0x00010000, THREAD_MODE_BACKGROUND_END = 0x00020000;
+
+        /// <summary>
+        /// Baixa a prioridade de disco (I/O), CPU e memoria da thread atual. Em HDD, a medicao de pastas nao compete
+        /// com o Windows nem com o usuario. Chame <see cref="EndBackgroundMode"/> na mesma thread. Falso se nao der.
+        /// </summary>
+        public static bool BeginBackgroundMode() => SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+
+        public static bool EndBackgroundMode() => SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
+
         [DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 

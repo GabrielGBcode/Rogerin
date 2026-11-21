@@ -12,7 +12,7 @@
     <ApplicationIcon>Assets\Rogerin.ico</ApplicationIcon>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>2.1.4</Version>
+    <Version>2.3.0</Version>
     <Company>Gabriel Gomes Batista</Company>
     <Product>Rogerin</Product>
     <Description>Otimizacao auditavel e reversivel para Windows 10 e 11</Description>

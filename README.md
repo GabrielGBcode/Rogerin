@@ -1,5 +1,9 @@
 # Rogerin
 
+[![Baixar Rogerin v2.3.0](https://img.shields.io/badge/Baixar-Rogerin%20v2.3.0-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/GabrielGBcode/Rogerin/releases/latest/download/Rogerin.exe)
+
+Baixe o `Rogerin.exe` já compilado e execute. Não precisa clonar nem compilar. O Windows pode mostrar um aviso de "editor desconhecido" (SmartScreen), porque o arquivo não é assinado digitalmente.
+
 Otimizador para Windows 10 e 11 feito para uso da equipe de TI em ambiente corporativo (domínio, antivírus/EDR, PowerShell bloqueado).
 
 - **Um único `Rogerin.exe`**, WPF sobre .NET Framework 4.8, que já vem no Windows 10 1903+ e no Windows 11. Não precisa instalar nada.

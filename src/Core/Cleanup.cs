@@ -199,19 +199,33 @@ namespace Rogerin.Core
 
         static IEnumerable<FileInfo> SafeEnumerate(DirectoryInfo dir, string pattern)
         {
+            var matches = PatternMatcher(pattern);
             var stack = new Stack<DirectoryInfo>();
             stack.Push(dir);
             while (stack.Count > 0)
             {
                 var d = stack.Pop();
-                FileInfo[] files; DirectoryInfo[] subs;
-                try { files = d.GetFiles(pattern); subs = d.GetDirectories(); }
+                List<FileSystemInfo> entries;
+                // Uma unica leitura da pasta (arquivos e subpastas juntos): em HDD cada leitura a mais custa uma busca no disco.
+                try { entries = d.EnumerateFileSystemInfos().ToList(); }
                 catch (UnauthorizedAccessException) { continue; }
                 catch (IOException) { continue; }
-                foreach (var f in files) yield return f;
-                foreach (var s in subs)
-                    if ((s.Attributes & FileAttributes.ReparsePoint) == 0) stack.Push(s); // nao segue junctions
+                foreach (var e in entries)
+                {
+                    if (e is FileInfo f) { if (matches(f.Name)) yield return f; }
+                    else if ((e.Attributes & FileAttributes.ReparsePoint) == 0) stack.Push((DirectoryInfo)e); // nao segue junctions
+                }
             }
+        }
+
+        /// <summary>Casa o nome do arquivo com o padrao (* e ?), sem diferenciar maiusculas, como o GetFiles fazia.</summary>
+        static Func<string, bool> PatternMatcher(string pattern)
+        {
+            if (string.IsNullOrEmpty(pattern) || pattern == "*") return name => true;
+            var rx = new System.Text.RegularExpressions.Regex(
+                "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".") + "$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            return rx.IsMatch;
         }
 
         static bool IsRunning(CleanupTarget t)

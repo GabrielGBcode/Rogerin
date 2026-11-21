@@ -110,7 +110,19 @@ namespace Rogerin
         public CleanupItem(CleanupTarget t) { Target = t; }
 
         bool _measured;
-        public void Measured() { _measured = true; RaiseState(); Raise(nameof(Description)); }
+        string _cachedWhen; // data (ISO) da ultima medicao guardada; so informativa, nunca libera a selecao
+        public void Measured() { _measured = true; _cachedWhen = null; RaiseState(); Raise(nameof(Description)); }
+
+        /// <summary>Mostra o valor da ultima medicao enquanto a nova roda. O item continua nao selecionavel.</summary>
+        public void ShowCached(int files, long bytes, string whenIso)
+        {
+            if (_measured) return;
+            Target.Files = files; Target.Bytes = bytes; _cachedWhen = whenIso;
+            RaiseState();
+        }
+
+        /// <summary>Volta a "Medindo…": usado depois de aplicar, quando o que foi medido deixou de valer.</summary>
+        public void Unmeasure() { _measured = false; _cachedWhen = null; RaiseState(); Raise(nameof(Description)); }
 
         public override string Name => Target.Name;
         public override string Description
@@ -137,12 +149,18 @@ namespace Rogerin
         public override bool IsVisible => true;
         public override bool CanSelect => Target.OnDemand || (_measured && Target.Files > 0);
         public override string StatusLabel => Target.OnDemand ? "Sob demanda"
-            : !_measured ? "Medindo…" : Target.Files == 0 ? "Já limpo" : Target.SizeLabel;
+            : !_measured ? (_cachedWhen != null ? $"≈ {Target.SizeLabel} · atualizando…" : "Medindo…")
+            : Target.Files == 0 ? "Já limpo" : Target.SizeLabel;
         protected override string Tone => Target.OnDemand ? "Na" : !_measured ? "Na" : Target.Files == 0 ? "Ok" : "Warn";
         public override string Details => Target.IsDnsCache ? "DnsFlushResolverCache (dnsapi.dll)"
             : Target.IsDiskOptimize ? $@"{System.Environment.SystemDirectory}\defrag.exe {Target.Path} /O"
             : Target.IsDiskCleanup ? $@"{System.Environment.SystemDirectory}\cleanmgr.exe /sagerun" + "\nfora: " + string.Join(", ", Cleanup.DiskCleanupExcluded)
-            : string.Join("\n", Target.Roots) + $"\n{Target.Files:N0} arquivos";
+            : string.Join("\n", Target.Roots) + (!_measured && _cachedWhen != null
+                ? $"\n≈ {Target.Files:N0} arquivos (última medição: {CachedWhenLabel()}), medindo de novo…"
+                : $"\n{Target.Files:N0} arquivos");
+
+        string CachedWhenLabel() =>
+            System.DateTime.TryParse(_cachedWhen, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d) ? d.ToString("dd/MM/yyyy HH:mm") : "data desconhecida";
     }
 
 

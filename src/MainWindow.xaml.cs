@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +30,9 @@ namespace Rogerin
         MemoryItem _memoryItem;
         string _startupSortKey; bool _startupSortDesc;
         List<ResidueRow> _residueRows;
+        CancellationTokenSource _analysisCts;
+        Task _analysis = Task.CompletedTask;
+        readonly object _engineLock = new object(); // a analise em segundo plano e a simulacao/aplicacao nao leem o motor ao mesmo tempo
 
         IEnumerable<TweakItem> Tweaks => _items.OfType<TweakItem>();
         IEnumerable<CleanupItem> Cleanups => _items.OfType<CleanupItem>();
@@ -98,9 +102,14 @@ namespace Rogerin
 
         async Task InitAsync()
         {
-            await Busy("Analisando o sistema…", async () =>
+            var abertura = Stopwatch.StartNew();
+            long catalogMs = 0;
+            // Janela clicavel desde o inicio: ate os itens existirem nao ha o que marcar, e cada item so libera depois
+            // da propria checagem (CanSelect). Nada e aplicado sem ler o estado real de novo (Engine.Apply).
+            await BusyQuiet("Analisando o sistema…", async () =>
             {
                 var catalog = Catalog.Load();
+                catalogMs = abertura.ElapsedMilliseconds;
                 var (sys, user) = await Task.Run(() => (SystemInfo.Collect(), UserContext.Resolve()));
                 _engine = new Engine(catalog, sys, user, _log);
                 _cleanup = new Cleanup(user, sys);
@@ -131,6 +140,17 @@ namespace Rogerin
             HistoryIntro.Text = $"Cada aplicação gera um backup em {Engine.BackupDir}. Desfazer devolve os valores exatos que existiam antes. " +
                                 "Apps removidos e arquivos limpos não voltam pelo desfazer.";
             RenderBanners();
+            _log.Write($"Abertura: catálogo {catalogMs:N0} ms e dados do computador {abertura.ElapsedMilliseconds - catalogMs:N0} ms.");
+
+            // Valores da ultima medicao, so para mostrar algo na hora: o item so libera quando a medicao nova terminar.
+            var cache = await Task.Run(() => MeasureCache.Load());
+            foreach (var c in Cleanups)
+                if (!c.Target.OnDemand && cache.TryGetValue(c.Name, out var m)) c.ShowCached(m.Files, m.Bytes, m.When);
+
+            LoadHistory();
+            // Ponto de partida seguro. Marcado ja agora: cada item entra na selecao quando liberar (OnItemReady).
+            LevelBasic.IsChecked = true;
+
             // Plano de energia agendado para depois do reinicio (Modern Standby): confirma ou ativa agora.
             var pending = await Task.Run(() =>
             {
@@ -139,9 +159,6 @@ namespace Rogerin
             });
             if (pending != null) _log.Write(pending);
             await RefreshAsync();
-            LoadHistory();
-
-            LevelBasic.IsChecked = true; // ponto de partida seguro
         }
 
         void Add(OptionItem item)
@@ -155,26 +172,114 @@ namespace Rogerin
             _items.Add(item);
         }
 
-        /// <summary>Le o estado de todos os ajustes e mede a limpeza. Somente leitura.</summary>
-        async Task RefreshAsync()
+        /// <summary>
+        /// Le o estado de todos os ajustes e mede a limpeza, em segundo plano e sem travar a janela. Somente leitura.
+        /// Cada item libera para marcar quando a propria checagem termina (CanSelect). Roda uma analise por vez:
+        /// pedir outra cancela a anterior e espera ela sair. <paramref name="cleanupsChanged"/>: depois de aplicar uma
+        /// limpeza, o que foi medido deixou de valer e os itens voltam a "Medindo…".
+        /// </summary>
+        async Task RefreshAsync(bool cleanupsChanged = false)
         {
-            await Busy("Analisando ajustes…", async () =>
+            var previous = _analysis;
+            _analysisCts?.Cancel();
+            var cts = _analysisCts = new CancellationTokenSource();
+            var run = RunAnalysisAsync(previous, cleanupsChanged, cts.Token);
+            _analysis = run;
+            await run;
+        }
+
+        /// <summary>Para a analise em andamento e espera ela sair (antes de aplicar, para nao disputar o disco).</summary>
+        async Task StopAnalysisAsync()
+        {
+            _analysisCts?.Cancel();
+            await _analysis;
+        }
+
+        async Task RunAnalysisAsync(Task previous, bool cleanupsChanged, CancellationToken ct)
+        {
+            await previous; // nunca falha: esta funcao trata os proprios erros
+            if (ct.IsCancellationRequested) return;
+            var total = Stopwatch.StartNew();
+            try
             {
-                var reports = await Task.Run(() => Tweaks.Select(i => _engine.Audit(i.Tweak)).ToList());
-                var list = Tweaks.ToList();
-                for (int i = 0; i < reports.Count; i++) list[i].Report = reports[i];
+                if (cleanupsChanged) foreach (var c in Cleanups) c.Unmeasure();
+                _memoryItem.Measured(_engine.System.RamGB, Native.AvailablePhysicalMemoryGB()); // leitura trivial, sem disco
+
+                // 1) Ajustes: le registro, servicos e tarefas, um por vez, e libera cada item ao terminar.
+                BusyText.Text = "Analisando ajustes…";
+                var swAudit = Stopwatch.StartNew();
+                var tweakItems = Tweaks.ToList();
+                IProgress<(TweakItem Item, TweakReport Report)> audited =
+                    new Progress<(TweakItem Item, TweakReport Report)>(r => { r.Item.Report = r.Report; OnItemReady(r.Item); });
+                await Task.Run(() =>
+                {
+                    foreach (var item in tweakItems)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        TweakReport report;
+                        lock (_engineLock) report = _engine.Audit(item.Tweak);
+                        audited.Report((item, report));
+                    }
+                }, ct);
                 _view.Refresh();
+                RenderComputer();
+                swAudit.Stop();
 
+                // 2) Limpeza: uma pasta por vez e com prioridade baixa de disco. Em HDD, medir em paralelo seria mais lento.
                 BusyText.Text = "Medindo arquivos temporários…";
-                await Task.Run(() => { foreach (var c in Cleanups) _cleanup.Measure(c.Target); });
-                foreach (var c in Cleanups) c.Measured();
+                var swClean = Stopwatch.StartNew();
+                var cleanItems = Cleanups.OrderBy(c => c.Target.OnDemand ? 0 : 1).ThenBy(c => c.Target.Files).ToList(); // pastas pequenas liberam primeiro
+                IProgress<CleanupItem> measured = new Progress<CleanupItem>(c => { c.Measured(); OnItemReady(c); });
+                var cleanMs = new List<(string Name, long Ms, int Files)>();
+                await Task.Run(() =>
+                {
+                    var background = Native.BeginBackgroundMode();
+                    try
+                    {
+                        foreach (var c in cleanItems)
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            var t0 = Stopwatch.StartNew();
+                            try { _cleanup.Measure(c.Target); }
+                            catch (Exception ex) { _log.Write($"Medição de \"{c.Name}\" falhou: {ex.Message}"); }
+                            cleanMs.Add((c.Name, t0.ElapsedMilliseconds, c.Target.Files));
+                            measured.Report(c);
+                        }
+                    }
+                    finally { if (background) Native.EndBackgroundMode(); }
+                }, ct);
+                swClean.Stop();
 
-                var ramFree = await Task.Run(() => Native.AvailablePhysicalMemoryGB());
-                _memoryItem.Measured(_engine.System.RamGB, ramFree);
-            });
+                // 3) Guarda a medicao: a proxima abertura mostra um valor aproximado na hora.
+                var snapshot = new Dictionary<string, CachedMeasure>();
+                foreach (var c in Cleanups.Where(c => !c.Target.OnDemand))
+                    snapshot[c.Name] = new CachedMeasure { Files = c.Target.Files, Bytes = c.Target.Bytes, When = DateTime.Now.ToString("o") };
+                await Task.Run(() => MeasureCache.Save(snapshot));
+
+                var slowest = string.Join("; ", cleanMs.OrderByDescending(x => x.Ms).Take(3).Select(x => $"{x.Name} {x.Ms:N0} ms ({x.Files:N0} arquivos)"));
+                _log.Write($"Análise concluída em {total.ElapsedMilliseconds:N0} ms: {tweakItems.Count} ajustes em {swAudit.ElapsedMilliseconds:N0} ms, " +
+                           $"limpeza em {swClean.ElapsedMilliseconds:N0} ms. Mais lentas: {slowest}.");
+
+                UpdateLevelCounts();
+                UpdateSelection();
+                RenderComputer();
+            }
+            catch (OperationCanceledException) { _log.Write("Análise interrompida (será refeita)."); }
+            catch (Exception ex) { _log.Write("ERRO: " + ex.Message); }
+            finally { if (!ct.IsCancellationRequested) BusyText.Text = ""; }
+        }
+
+        /// <summary>Um item acabou de ser checado ou medido: entra na selecao do nivel marcado (se houver) e atualiza os contadores.</summary>
+        void OnItemReady(OptionItem item)
+        {
+            if (CheckedLevel is Level level && item.CanSelect && item.InLevel(level) && !item.IsSelected)
+            {
+                _bulk = true;
+                item.IsSelected = true;
+                _bulk = false;
+            }
             UpdateLevelCounts();
             UpdateSelection();
-            RenderComputer();
         }
 
         #region Selecao
@@ -265,7 +370,7 @@ namespace Rogerin
             if (tweaks.Count + cleans.Count == 0 && !boostRam) return;
 
             var lines = new List<string>();
-            await Busy("Simulando…", async () => lines = await Task.Run(() => _engine.Preview(tweaks).ToList()));
+            await Busy("Simulando…", async () => lines = await Task.Run(() => { lock (_engineLock) return _engine.Preview(tweaks).ToList(); }));
             if (boostRam) lines.Insert(0, "Liberar RAM: esvaziar as listas de memória em espera do Windows (não mexe em nenhum processo).");
             foreach (var c in cleans)
                 lines.Add(c.Target.IsDnsCache ? "Limpeza: esvaziar cache DNS (o IP e a conexão não mudam)"
@@ -287,6 +392,7 @@ namespace Rogerin
 
         async Task ApplyAsync(List<Tweak> tweaks, List<CleanupItem> cleans, bool restore, bool boostRam)
         {
+            await StopAnalysisAsync(); // aplicar nao disputa o disco com a analise em segundo plano
             await Busy("Aplicando…", async () =>
             {
                 // A barra cobre a aplicação inteira: RAM (1 etapa) + ajustes (1 etapa) + cada limpeza (1 etapa cada),
@@ -323,7 +429,7 @@ namespace Rogerin
                 if (tweaks.Count > 0)
                 {
                     ShowStep(0, $"Aplicando {tweaks.Count} ajuste(s)…");
-                    var results = await Task.Run(() => _engine.Apply(tweaks, restore, progress));
+                    var results = await Task.Run(() => { lock (_engineLock) return _engine.Apply(tweaks, restore, progress); });
                     var reboot = results.Any(r => r.Tweak.RebootRequired && r.Status == TweakStatus.Applied);
                     _log.Write($"Ajustes: {results.Count(r => r.Status == TweakStatus.Applied)} de {results.Count} aplicados." +
                                (reboot ? " Reinicie o computador para concluir." : " Alguns itens valem após sair e entrar de novo na conta."));
@@ -357,10 +463,11 @@ namespace Rogerin
                 CleanupOverlay.Visibility = Visibility.Collapsed;
                 if (cleans.Any(c => !c.Target.OnDemand || c.Target.IsDiskCleanup)) _log.Write($"Limpeza concluída: {new CleanupTarget { Bytes = freed }.SizeLabel} liberados.");
             });
-            await RefreshAsync();
-            LoadHistory();
+            // Limpa a selecao antes de reanalisar: a analise agora roda em segundo plano e a janela fica clicavel.
             ClearLevel();
             SetSelection(i => false);
+            LoadHistory();
+            await RefreshAsync(cleanupsChanged: cleans.Count > 0);
         }
 
         /// <summary>Botão "Executar" do item Liberar RAM: ação isolada, sem ponto de restauração e sem confirmação.</summary>
@@ -410,7 +517,7 @@ namespace Rogerin
         void RenderComputer()
         {
             var sys = _engine.System;
-            var applicable = Tweaks.Where(t => t.Report.Status != TweakStatus.NotApplicable).ToList();
+            var applicable = Tweaks.Where(t => t.Report != null && t.Report.Status != TweakStatus.NotApplicable).ToList(); // Report e nulo ate a auditoria do item terminar
             var applied = applicable.Count(t => t.Report.Status == TweakStatus.Applied);
             ScoreText.Text = $"{applied} de {applicable.Count}";
             ScoreSub.Text = $"{applicable.Count - applied} pendentes";
@@ -736,6 +843,15 @@ namespace Rogerin
             try { await work(); }
             catch (Exception ex) { _log.Write("ERRO: " + ex.Message); }
             finally { IsEnabled = true; BusyText.Text = ""; CleanupOverlay.Visibility = Visibility.Collapsed; }
+        }
+
+        /// <summary>Como o Busy, mas sem desativar a janela: so mostra o texto de andamento.</summary>
+        async Task BusyQuiet(string message, Func<Task> work)
+        {
+            BusyText.Text = message;
+            try { await work(); }
+            catch (Exception ex) { _log.Write("ERRO: " + ex.Message); }
+            finally { BusyText.Text = ""; }
         }
 
         #endregion

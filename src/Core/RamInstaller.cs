@@ -14,7 +14,7 @@ namespace Rogerin.Core
     public static class RamInstaller
     {
         public const string FileName = "Rogerin-RAM-Setup-1.0.0.exe";
-        public const string Url = "https://github.com/GabrielGBcode/Rogerin/releases/latest/download/" + FileName;
+        public const string Url = "https://github.com/GabrielGBcode/Rogerin/releases/download/v1.0.0/" + FileName; // tag fixa: uma Release mais nova nao pode quebrar este link
 
         /// <summary>Baixa para a pasta temporaria e devolve o caminho. Lanca excecao se falhar.</summary>
         public static async Task<string> DownloadAsync()
